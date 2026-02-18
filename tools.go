@@ -22,13 +22,6 @@ type checkArg struct {
 	Col  int    `json:"col" jsonschema:"0-indexed column number"`
 }
 
-type queryArg struct {
-	File    string `json:"file" jsonschema:"path to the .v file"`
-	Line    int    `json:"line" jsonschema:"0-indexed line number"`
-	Col     int    `json:"col" jsonschema:"0-indexed column number"`
-	Pattern string `json:"pattern" jsonschema:"Rocq identifier or expression"`
-}
-
 // registerTools registers all MCP tools on the server.
 func registerTools(server *mcp.Server, sm *stateManager) {
 	// Tier 1: Core proof interaction.
