@@ -1,13 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Read(//tmp/**)",
-      "Edit(//tmp/**)",
-      "Write(//tmp/**)",
-      "Glob(//tmp/**)",
-      "Grep(//tmp/**)",
       "Edit(./**)",
       "Write(./**)",
+      "Read(//tmp/**)",
+      "Glob(//tmp/**)",
+      "Grep(//tmp/**)",
       "Bash(go *)",
       "Bash(gofmt *)",
       "Bash(vsrocqtop *)",
