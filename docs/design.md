@@ -31,28 +31,83 @@ Other useful commands: `prover/stepForward`, `prover/stepBackward`, `prover/inte
 
 ## MCP Tools
 
+Tools are organized into tiers. Tier 1 is the core proof interaction loop — implement
+these first. Tier 2 adds query commands for exploring definitions and types. Tier 3
+covers diagnostics and state inspection.
+
+### Tier 1: Core Proof Interaction
+
 **`rocq_open(file: string)`**
 Open a .v file in vsrocq via `textDocument/didOpen`. Returns confirmation.
+
+**`rocq_close(file: string)`**
+Send `textDocument/didClose`. Clean up state.
+
+**`rocq_sync(file: string)`**
+Re-read the file from disk and send `textDocument/didChange` to vsrocq.
+Required after Claude edits a file with Edit/Write tools.
 
 **`rocq_check(file: string, line: int, col: int)`**
 Send `prover/interpretToPoint` for the given position. Wait for `prover/proofView`
 and `textDocument/publishDiagnostics`. Return proof goals + any errors/warnings.
 
+**`rocq_check_all(file: string)`**
+Send `prover/interpretToEnd`. Wait for final `prover/proofView` and diagnostics.
+Return proof goals (if any remain) + all errors/warnings. Useful for checking
+an entire file after edits.
+
 **`rocq_step_forward(file: string)` / `rocq_step_backward(file: string)`**
-Step one sentence forward/backward. Return updated proof goals.
+Send `prover/stepForward` or `prover/stepBackward`. Return updated proof goals.
 
-**`rocq_close(file: string)`**
-Send `textDocument/didClose`. Clean up state.
+### Tier 2: Query Commands
 
-Note: file edits are handled by Claude's existing Edit/Write tools. The MCP server
-sends `textDocument/didChange` notifications to vsrocq when files change.
-This requires the MCP server to detect file changes — either:
-- (a) Claude calls a `rocq_sync(file)` tool after editing, or
-- (b) the MCP server watches the file with fsnotify.
-Option (a) is simpler and more explicit.
+These wrap vsrocq's query requests. All take `file`, `line`, `col`, and `pattern`
+(a Rocq identifier or expression). The position provides the proof context for
+name resolution. They return pretty-printed text from Rocq.
 
-**`rocq_sync(file: string)`**
-Re-read the file from disk and send `textDocument/didChange` to vsrocq.
+**`rocq_about(file: string, line: int, col: int, pattern: string)`**
+`prover/about` — Get information about a name (type, where it's defined, its implicit
+arguments). Equivalent to `About foo` in Rocq.
+
+**`rocq_check_type(file: string, line: int, col: int, pattern: string)`**
+`prover/check` — Type-check an expression and return its type. Equivalent to `Check foo`.
+
+**`rocq_locate(file: string, line: int, col: int, pattern: string)`**
+`prover/locate` — Find the fully qualified name and module path of an identifier.
+Equivalent to `Locate foo`.
+
+**`rocq_print(file: string, line: int, col: int, pattern: string)`**
+`prover/print` — Print the full definition of a name. Equivalent to `Print foo`.
+
+**`rocq_search(file: string, line: int, col: int, pattern: string)`**
+`prover/search` — Search for lemmas matching a pattern. This is async in the vsrocq
+protocol: the request returns immediately and results arrive via `prover/searchResult`
+notifications. The MCP tool collects results for a bounded time and returns them.
+
+### Tier 3: Diagnostics & State
+
+**`rocq_reset(file: string)`**
+`prover/resetRocq` — Reset the Rocq prover state for a document. Useful when the
+prover gets into a bad state.
+
+**`rocq_document_state(file: string)`**
+`prover/documentState` — Return internal vsrocq document state as a string.
+Useful for debugging.
+
+**`rocq_document_proofs(file: string)`**
+`prover/documentProofs` — Return the list of proof blocks in the document with their
+ranges. Useful for navigating a file and understanding proof structure.
+
+### vsrocq Server → Client Notifications (handled internally)
+
+These are not exposed as MCP tools but are consumed by the MCP server internally:
+
+- `prover/proofView` — proof goals + messages, delivered to waiting `rocq_check`/step calls
+- `prover/updateHighlights` — processing progress, could be used for status feedback
+- `prover/moveCursor` — cursor movement requests, not applicable in CLI context
+- `prover/blockOnError` — error-blocking ranges, folded into diagnostics reporting
+- `prover/debugMessage` — logged to stderr for debugging
+- `prover/searchResult` — collected and returned by `rocq_search`
 
 ## State Management
 
