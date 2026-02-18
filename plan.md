@@ -27,7 +27,7 @@
 - [x] Ppcmd pretty-printer rendering for proof goals
 - [x] Integration test: open file mid-proof, check, verify goals returned
 - [x] Integration test: file with error returns diagnostics
-- [ ] End-to-end test: talk MCP over stdio, call tools, verify results
+- [x] End-to-end test: talk MCP over stdio, call tools, verify results
 
 ## Phase 5: Query Tools (Tier 2)
 - [ ] rocq_about / rocq_check_type / rocq_locate / rocq_print / rocq_search

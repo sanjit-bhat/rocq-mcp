@@ -310,12 +310,32 @@ func parseProofView(params json.RawMessage) *ProofView {
 		pv.Goals = append(pv.Goals, goal)
 	}
 	for _, m := range raw.Messages {
-		pv.Messages = append(pv.Messages, renderPpcmd(m))
-	}
-	for _, m := range raw.PPMessages {
+		// messages items can be [severity, ppcmd_tree] or plain ppcmd
+		var pair []json.RawMessage
+		if json.Unmarshal(m, &pair) == nil && len(pair) >= 2 {
+			// Check if first element is a number (severity).
+			var severity int
+			if json.Unmarshal(pair[0], &severity) == nil {
+				text := renderPpcmd(pair[1])
+				if text != "" {
+					pv.Messages = append(pv.Messages, text)
+				}
+				continue
+			}
+		}
 		text := renderPpcmd(m)
 		if text != "" {
 			pv.Messages = append(pv.Messages, text)
+		}
+	}
+	for _, m := range raw.PPMessages {
+		// pp_messages items are [severity, ppcmd_tree]
+		var pair []json.RawMessage
+		if json.Unmarshal(m, &pair) == nil && len(pair) >= 2 {
+			text := renderPpcmd(pair[1])
+			if text != "" {
+				pv.Messages = append(pv.Messages, text)
+			}
 		}
 	}
 	return pv
