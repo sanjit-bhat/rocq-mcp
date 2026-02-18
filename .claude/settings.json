@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "Read(/tmp/**)",
       "Edit(./**)",
       "Write(./**)",
       "Bash(go *)",
