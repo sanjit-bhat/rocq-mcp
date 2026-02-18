@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Read(/tmp/**)",
+      "Read(//tmp/**)",
+      "Edit(//tmp/**)",
+      "Write(//tmp/**)",
+      "Glob(//tmp/**)",
+      "Grep(//tmp/**)",
       "Edit(./**)",
       "Write(./**)",
       "Bash(go *)",
