@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: 1.25
+
+jobs:
+  test-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # don't actually need rocq, but setup-rocq handles opam caching.
+      - uses: tchajed/setup-rocq@v1
+      - name: Install opam deps
+        run: |
+          opam install --deps-only ./rocq-mcp.opam
+
+      - name: Test
+        run: go test -v ./...
+
+  lint-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Format
+        run: |
+          gofmt -w -s .
+          git diff --exit-code
+      - name: Vet
+        run: go vet ./...
+      - name: Fix
+        run: |
+          go fix ./...
+          git diff --exit-code
+      - name: Lint
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "latest"
+          install-go: false
+          cache-key: ${{ env.GO_VERSION }}
