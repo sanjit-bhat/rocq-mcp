@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(./**)",
+      "Write(./**)",
+      "Bash(go *)",
+      "Bash(gofmt *)",
+      "Bash(vsrocqtop *)",
+      "Bash(gh repo view *)",
+      "Bash(gh api *)",
+      "Bash(gh browse *)",
+      "Bash(gh search *)",
+      "Bash(gh issue *)",
+      "Bash(git *)",
+      "Bash(rocq-mcp *)",
+      "Bash(./rocq-mcp *)"
+    ]
+  }
+}
