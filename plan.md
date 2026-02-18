@@ -1,30 +1,32 @@
 # Implementation Plan
 
 ## Phase 1: Foundation
-- [ ] Initialize Go module, add MCP SDK dependency
-- [ ] Implement LSP JSON-RPC codec (Content-Length framing, encode/decode)
-- [ ] Unit test: codec round-trip (serialize → deserialize)
+- [x] Initialize Go module, add MCP SDK dependency
+- [x] Implement LSP JSON-RPC codec (Content-Length framing, encode/decode)
+- [x] Unit test: codec round-trip (serialize → deserialize)
 
 ## Phase 2: vsrocq Client
-- [ ] Implement vsrocqtop subprocess management (spawn, pipes, shutdown)
-- [ ] LSP initialization handshake (initialize, initialized, didChangeConfiguration)
-- [ ] Async notification dispatcher (route proofView, diagnostics, etc.)
-- [ ] Integration test: spawn vsrocqtop, initialize, shut down cleanly
+- [x] Implement vsrocqtop subprocess management (spawn, pipes, shutdown)
+- [x] LSP initialization handshake (initialize, initialized, didChangeConfiguration)
+- [x] Async notification dispatcher (route proofView, diagnostics, etc.)
+- [x] Handle workspace/configuration server→client requests
+- [x] Integration test: spawn vsrocqtop, initialize, shut down cleanly
 
 ## Phase 3: Document Management
-- [ ] Per-document state (version counter, diagnostics, proofView)
-- [ ] didOpen / didClose / didChange
-- [ ] Sync from disk (re-read file, send didChange)
-- [ ] Integration test: open a trivial .v file, get no errors
+- [x] Per-document state (version counter, diagnostics, proofView)
+- [x] didOpen / didClose / didChange
+- [x] Sync from disk (re-read file, send didChange)
+- [x] Integration test: open a trivial .v file, get no errors
 
 ## Phase 4: Core Proof Tools (Tier 1 MCP)
-- [ ] MCP server setup with tool registration
-- [ ] rocq_open / rocq_close / rocq_sync tools
-- [ ] rocq_check (interpretToPoint → wait for proofView + diagnostics)
-- [ ] rocq_check_all (interpretToEnd)
-- [ ] rocq_step_forward / rocq_step_backward
-- [ ] Integration test: open file mid-proof, check, verify goals returned
-- [ ] Integration test: file with error returns diagnostics
+- [x] MCP server setup with tool registration
+- [x] rocq_open / rocq_close / rocq_sync tools
+- [x] rocq_check (interpretToPoint → wait for proofView + diagnostics)
+- [x] rocq_check_all (interpretToEnd)
+- [x] rocq_step_forward / rocq_step_backward
+- [x] Ppcmd pretty-printer rendering for proof goals
+- [x] Integration test: open file mid-proof, check, verify goals returned
+- [x] Integration test: file with error returns diagnostics
 - [ ] End-to-end test: talk MCP over stdio, call tools, verify results
 
 ## Phase 5: Query Tools (Tier 2)

@@ -72,6 +72,9 @@ func (c *vsrocqClient) readLoop() {
 			if ok {
 				ch <- msg
 			}
+		} else if msg.ID != nil && msg.Method != nil {
+			// Server→client request (e.g. workspace/configuration).
+			c.handleServerRequest(*msg.ID, *msg.Method, msg.Params)
 		} else if msg.Method != nil {
 			// Notification from server.
 			c.handlersMu.RLock()
@@ -83,6 +86,46 @@ func (c *vsrocqClient) readLoop() {
 				log.Printf("unhandled notification: %s", *msg.Method)
 			}
 		}
+	}
+}
+
+// handleServerRequest responds to server→client requests.
+func (c *vsrocqClient) handleServerRequest(id int64, method string, params json.RawMessage) {
+	switch method {
+	case "workspace/configuration":
+		// Respond with vsrocq settings for each requested item.
+		settings := map[string]any{
+			"proof": map[string]any{
+				"mode": 0, // Manual
+			},
+		}
+		// workspace/configuration expects an array of results, one per item.
+		// We return our settings for each item requested.
+		var req struct {
+			Items []any `json:"items"`
+		}
+		n := 1
+		if json.Unmarshal(params, &req) == nil {
+			n = len(req.Items)
+		}
+		results := make([]any, n)
+		for i := range results {
+			results[i] = settings
+		}
+		data, _ := json.Marshal(results)
+		c.codec.encode(&jsonRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Result:  data,
+		})
+	default:
+		log.Printf("unhandled server request: %s (id=%d)", method, id)
+		// Send empty response to avoid blocking.
+		c.codec.encode(&jsonRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Result:  json.RawMessage("null"),
+		})
 	}
 }
 

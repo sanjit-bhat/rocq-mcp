@@ -81,6 +81,12 @@ func (sm *stateManager) ensureClient() error {
 	// Register notification handlers.
 	client.onNotification("textDocument/publishDiagnostics", sm.handleDiagnostics)
 	client.onNotification("prover/proofView", sm.handleProofView)
+	client.onNotification("prover/updateHighlights", func(params json.RawMessage) {})
+	client.onNotification("prover/moveCursor", func(params json.RawMessage) {})
+	client.onNotification("prover/blockOnError", func(params json.RawMessage) {})
+	client.onNotification("prover/debugMessage", func(params json.RawMessage) {
+		log.Printf("vsrocq debug: %s", string(params))
+	})
 
 	// Initialize with current working directory.
 	cwd, _ := os.Getwd()
@@ -123,8 +129,8 @@ func (sm *stateManager) openDoc(path string) error {
 		URI:          uri,
 		Version:      1,
 		Content:      string(content),
-		proofViewCh:  make(chan *ProofView, 1),
-		diagnosticCh: make(chan []Diagnostic, 1),
+		proofViewCh:  make(chan *ProofView, 16),
+		diagnosticCh: make(chan []Diagnostic, 16),
 	}
 	sm.docs[uri] = doc
 
@@ -230,9 +236,9 @@ func (sm *stateManager) handleDiagnostics(params json.RawMessage) {
 
 // handleProofView processes prover/proofView notifications.
 func (sm *stateManager) handleProofView(params json.RawMessage) {
-	var pv ProofView
-	if err := json.Unmarshal(params, &pv); err != nil {
-		log.Printf("parse proofView: %v", err)
+	pv := parseProofView(params)
+	if pv == nil {
+		log.Printf("failed to parse proofView")
 		return
 	}
 
@@ -242,7 +248,7 @@ func (sm *stateManager) handleProofView(params json.RawMessage) {
 	defer sm.mu.Unlock()
 	for _, doc := range sm.docs {
 		select {
-		case doc.proofViewCh <- &pv:
+		case doc.proofViewCh <- pv:
 		default:
 		}
 	}
