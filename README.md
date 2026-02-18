@@ -1,2 +1,1 @@
-# rocq-mcp
-Rocq MCP Server
+# Rocq MCP Server
