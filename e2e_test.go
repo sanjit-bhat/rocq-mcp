@@ -11,8 +11,6 @@ import (
 )
 
 func TestE2EMCPProofSession(t *testing.T) {
-	skipIfNoVsrocq(t)
-
 	// Build the binary.
 	binPath := filepath.Join(t.TempDir(), "rocq-mcp")
 	build := exec.Command("go", "build", "-o", binPath, ".")

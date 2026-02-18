@@ -10,16 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func skipIfNoVsrocq(t *testing.T) {
-	t.Helper()
-	if _, err := os.Stat("/Users/sanjit/.opam/4.14.2/bin/vsrocqtop"); err != nil {
-		t.Skip("vsrocqtop not available")
-	}
-}
-
 func TestVsrocqInitShutdown(t *testing.T) {
-	skipIfNoVsrocq(t)
-
 	client, err := newVsrocqClient(nil)
 	if err != nil {
 		t.Fatalf("newVsrocqClient: %v", err)
@@ -36,8 +27,6 @@ func TestVsrocqInitShutdown(t *testing.T) {
 }
 
 func TestOpenAndCheckSimple(t *testing.T) {
-	skipIfNoVsrocq(t)
-
 	sm := newStateManager(nil)
 	defer sm.shutdown()
 
@@ -78,8 +67,6 @@ func TestOpenAndCheckSimple(t *testing.T) {
 }
 
 func TestOpenAndCheckError(t *testing.T) {
-	skipIfNoVsrocq(t)
-
 	sm := newStateManager(nil)
 	defer sm.shutdown()
 
@@ -124,8 +111,6 @@ func TestOpenAndCheckError(t *testing.T) {
 }
 
 func TestCheckProofGoals(t *testing.T) {
-	skipIfNoVsrocq(t)
-
 	sm := newStateManager(nil)
 	defer sm.shutdown()
 
