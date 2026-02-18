@@ -52,4 +52,4 @@ jobs:
         with:
           version: "latest"
           install-go: false
-          cache-key: $GO_VERSION
+          cache-key: ${{ env.GO_VERSION }}
