@@ -6,6 +6,7 @@
       "Read(//tmp/**)",
       "Glob(//tmp/**)",
       "Grep(//tmp/**)",
+      "WebSearch",
       "Bash(go *)",
       "Bash(gofmt *)",
       "Bash(vsrocqtop *)",
