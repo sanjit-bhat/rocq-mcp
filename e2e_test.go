@@ -41,7 +41,7 @@ func TestE2EMCPProofSession(t *testing.T) {
 	for _, tool := range tools.Tools {
 		toolNames[tool.Name] = true
 	}
-	for _, name := range []string{"rocq_open", "rocq_close", "rocq_check", "rocq_check_all", "rocq_step_forward", "rocq_step_backward", "rocq_sync"} {
+	for _, name := range []string{"rocq_open", "rocq_close", "rocq_check", "rocq_check_all", "rocq_step_forward", "rocq_step_backward", "rocq_sync", "rocq_get_proof_state"} {
 		if !toolNames[name] {
 			t.Errorf("missing tool: %s", name)
 		}

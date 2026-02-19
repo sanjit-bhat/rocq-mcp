@@ -41,11 +41,12 @@ type Position struct {
 
 // docState tracks per-document state.
 type docState struct {
-	URI         string
-	Version     int
-	Content     string
-	Diagnostics []Diagnostic
-	ProofView   *ProofView
+	URI           string
+	Version       int
+	Content       string
+	Diagnostics   []Diagnostic
+	ProofView     *ProofView
+	PrevProofView *ProofView // previous proof view for delta computation
 
 	// Channels for bridging async notifications to sync tool calls.
 	proofViewCh  chan *ProofView
