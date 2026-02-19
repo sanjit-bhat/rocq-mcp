@@ -1,5 +1,7 @@
 package main
 
+// proof.go — proof-checking operations: check, step, and result collection from vsrocq.
+
 import (
 	"time"
 

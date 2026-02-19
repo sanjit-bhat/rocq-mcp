@@ -1,5 +1,7 @@
 package main
 
+// tools.go — MCP tool registration wiring each tool name to its handler.
+
 import (
 	"context"
 

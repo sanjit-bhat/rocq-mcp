@@ -1,5 +1,7 @@
 package main
 
+// lsp.go — Content-Length framed JSON-RPC codec for LSP communication.
+
 import (
 	"bufio"
 	"encoding/json"

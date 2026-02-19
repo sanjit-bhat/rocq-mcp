@@ -1,5 +1,7 @@
 package main
 
+// vsrocq.go — vsrocqtop subprocess management and LSP client handshake.
+
 import (
 	"encoding/json"
 	"fmt"

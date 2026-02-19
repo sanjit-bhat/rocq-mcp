@@ -1,5 +1,7 @@
 package main
 
+// state.go — per-document state tracking and vsrocq notification dispatch.
+
 import (
 	"encoding/json"
 	"fmt"

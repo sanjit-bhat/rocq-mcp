@@ -1,5 +1,7 @@
 package main
 
+// types.go — shared domain types for proof goals, diagnostics, and LSP positions.
+
 // ProofGoal represents a single goal in a proof view.
 type ProofGoal struct {
 	ID         string   `json:"id"`

@@ -1,5 +1,7 @@
 package main
 
+// format.go — rendering proof views, diagnostics, and Ppcmd trees to human-readable text.
+
 import (
 	"encoding/json"
 	"fmt"

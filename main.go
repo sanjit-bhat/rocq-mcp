@@ -1,5 +1,7 @@
 package main
 
+// main.go — entrypoint: starts the MCP server over stdio.
+
 import (
 	"context"
 	"log"
