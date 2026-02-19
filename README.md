@@ -26,13 +26,11 @@ Install `vsrocqtop`:
 opam install vsrocq-language-server
 ```
 
-### Build
+### Install
 
 ```
-go build -o rocq-mcp .
+go install github.com/sanjit/rocq-mcp@latest
 ```
-
-Put `rocq-mcp` somewhere on your `$PATH` (or reference it by absolute path).
 
 ## Usage
 
@@ -77,17 +75,10 @@ In `.claude/settings.local.json`:
 }
 ```
 
-### Workflow
+### Add the workflow skill
 
-1. Build dependencies for your `.v` file first (e.g. `make -j10 path/to/file.vos`)
-2. `rocq_open` the file
-3. `rocq_check_all` to see current errors and proof goals
-4. Edit the file to fix errors or fill in proofs
-5. `rocq_sync` after every edit (required — the checker reads from disk)
-6. `rocq_check_all` again to see if errors are resolved
-7. Repeat 4–6 until clean
+Copy `.claude/skills/rocq-build/` into your project. This teaches the agent the open/check/edit/sync workflow.
 
-Tips:
-- Use `rocq_check` at a specific line to see proof goals mid-proof
-- Use `rocq_step_forward` / `rocq_step_backward` for fine-grained stepping
-- Use `rocq_get_proof_state` when you need the full context (all hypotheses and goals)
+### Example project
+
+See [pav-proof](https://github.com/sanjit-bhat/pav-proof/tree/qed-serv) for a working setup.
