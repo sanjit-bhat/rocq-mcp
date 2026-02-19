@@ -14,8 +14,7 @@ func TestFormatDeltaResults_NoPrevious(t *testing.T) {
 	result := formatDeltaResults(nil, pv, nil)
 	got := resultText(result)
 	want := `=== Proof Goals: 1 ===
-
-Focused Goal (1):
+Goal 1 (1):
   n : nat
   ────────────────────
   0 + n = n
@@ -38,15 +37,18 @@ func TestFormatDeltaResults_AddedHypothesis(t *testing.T) {
 	}
 	result := formatDeltaResults(prev, cur, nil)
 	got := resultText(result)
-	want := `=== Proof Goals: 1 ===
-
-Focused Goal:
-  + n : nat
-  ────────────────────
-  0 + n = n
-`
-	if got != want {
-		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
+	// Should contain diff lines showing added hypothesis and changed goal.
+	if !strings.Contains(got, "=== Proof Goals: 1 ===") {
+		t.Errorf("missing goal count header.\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "+  n : nat") {
+		t.Errorf("expected +  n : nat in diff.\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "-  forall n, 0 + n = n") {
+		t.Errorf("expected removed old goal in diff.\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "+  0 + n = n") {
+		t.Errorf("expected added new goal in diff.\ngot:\n%s", got)
 	}
 }
 
@@ -63,16 +65,12 @@ func TestFormatDeltaResults_RemovedHypothesis(t *testing.T) {
 	}
 	result := formatDeltaResults(prev, cur, nil)
 	got := resultText(result)
-	want := `=== Proof Goals: 1 ===
-
-Focused Goal:
-  - H : True
-  n : nat
-  ────────────────────
-  P
-`
-	if got != want {
-		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
+	if !strings.Contains(got, "-  H : True") {
+		t.Errorf("expected removed hypothesis in diff.\ngot:\n%s", got)
+	}
+	// "n : nat" is unchanged so should not appear with + or -
+	if strings.Contains(got, "+  n : nat") || strings.Contains(got, "-  n : nat") {
+		t.Errorf("unchanged hypothesis should not appear in diff.\ngot:\n%s", got)
 	}
 }
 
@@ -90,16 +88,11 @@ func TestFormatDeltaResults_GoalCountDelta(t *testing.T) {
 	}
 	result := formatDeltaResults(prev, cur, nil)
 	got := resultText(result)
-	want := `=== Proof Goals: 2 (+1) ===
-
-Focused Goal:
-  ────────────────────
-  A
-
-Goal 2: B
-`
-	if got != want {
-		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
+	if !strings.Contains(got, "=== Proof Goals: 2 (+1) ===") {
+		t.Errorf("expected goal count delta.\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "+Goal 2:") {
+		t.Errorf("expected added Goal 2 in diff.\ngot:\n%s", got)
 	}
 }
 
@@ -118,14 +111,8 @@ func TestFormatDeltaResults_GoalsSolved(t *testing.T) {
 	}
 	result := formatDeltaResults(prev, cur, nil)
 	got := resultText(result)
-	want := `=== Proof Goals: 1 (-2) ===
-
-Focused Goal:
-  ────────────────────
-  B
-`
-	if got != want {
-		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
+	if !strings.Contains(got, "=== Proof Goals: 1 (-2) ===") {
+		t.Errorf("expected negative goal delta.\ngot:\n%s", got)
 	}
 }
 
@@ -163,6 +150,46 @@ func TestFormatDeltaResults_WithDiagnostics(t *testing.T) {
 	}
 }
 
+func TestFormatDeltaResults_NoChanges(t *testing.T) {
+	pv := &ProofView{
+		Goals: []ProofGoal{
+			{Goal: "P", Hypotheses: []string{"n : nat"}},
+		},
+	}
+	result := formatDeltaResults(pv, pv, nil)
+	got := resultText(result)
+	if !strings.Contains(got, "No changes to proof state.") {
+		t.Errorf("expected no-changes message.\ngot:\n%s", got)
+	}
+}
+
+func TestFormatDeltaResults_MultiLineHypothesis(t *testing.T) {
+	prev := &ProofView{
+		Goals: []ProofGoal{
+			{Goal: "P", Hypotheses: []string{"H : forall x y,\n  x = y -> y = x"}},
+		},
+	}
+	cur := &ProofView{
+		Goals: []ProofGoal{
+			{Goal: "P", Hypotheses: []string{"H : forall x y z,\n  x = y -> y = z -> x = z"}},
+		},
+	}
+	result := formatDeltaResults(prev, cur, nil)
+	got := resultText(result)
+	// Should show line-level changes within the multi-line hypothesis.
+	if !strings.Contains(got, "-") && !strings.Contains(got, "+") {
+		t.Errorf("expected diff markers for changed multi-line hypothesis.\ngot:\n%s", got)
+	}
+	// Old lines should be removed.
+	if !strings.Contains(got, "-  H : forall x y,") {
+		t.Errorf("expected old hypothesis first line removed.\ngot:\n%s", got)
+	}
+	// New lines should be added.
+	if !strings.Contains(got, "+  H : forall x y z,") {
+		t.Errorf("expected new hypothesis first line added.\ngot:\n%s", got)
+	}
+}
+
 func TestFormatFullResults(t *testing.T) {
 	pv := &ProofView{
 		Goals: []ProofGoal{
@@ -189,22 +216,67 @@ Goal 2 (2):
 	}
 }
 
-func TestWriteHypothesesDiff_MixedChanges(t *testing.T) {
-	var sb strings.Builder
-	prev := &ProofGoal{
-		Hypotheses: []string{"a : nat", "b : nat", "H : a = b"},
+func TestRenderProofText(t *testing.T) {
+	pv := &ProofView{
+		Goals: []ProofGoal{
+			{ID: "1", Goal: "A", Hypotheses: []string{"H : True"}},
+			{Goal: "B"},
+		},
 	}
-	cur := &ProofGoal{
-		Hypotheses: []string{"a : nat", "b : nat", "H' : b = a"},
-	}
-	writeHypothesesDiff(&sb, prev, cur)
-	got := sb.String()
-	want := `  - H : a = b
-  a : nat
-  b : nat
-  + H' : b = a
+	got := renderProofText(pv)
+	want := `Goal 1 (1):
+  H : True
+  ────────────────────
+  A
+
+Goal 2:
+  ────────────────────
+  B
 `
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}
+
+func TestDiffText_Identical(t *testing.T) {
+	got := diffText("hello\nworld\n", "hello\nworld\n")
+	if got != "" {
+		t.Errorf("expected empty diff for identical text, got:\n%s", got)
+	}
+}
+
+func TestDiffText_Changes(t *testing.T) {
+	old := "line1\nline2\nline3\n"
+	new := "line1\nchanged\nline3\n"
+	got := diffText(old, new)
+	if !strings.Contains(got, "-line2") {
+		t.Errorf("expected removed line in diff.\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "+changed") {
+		t.Errorf("expected added line in diff.\ngot:\n%s", got)
+	}
+}
+
+func TestParseDiffHunks(t *testing.T) {
+	raw := `diff --git a/old b/new
+index 1234..5678 100644
+--- a/old
++++ b/new
+@@ -1,2 +1,2 @@
+-old line
++new line
+`
+	got := parseDiffHunks(raw)
+	if strings.Contains(got, "---") || strings.Contains(got, "+++") {
+		t.Errorf("file headers should be stripped.\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "@@ -1,2 +1,2 @@") {
+		t.Errorf("hunk header should be present.\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "-old line") {
+		t.Errorf("removed line should be present.\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "+new line") {
+		t.Errorf("added line should be present.\ngot:\n%s", got)
 	}
 }

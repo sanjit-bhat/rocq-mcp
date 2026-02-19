@@ -51,12 +51,18 @@
 ## Phase 7: Diagnostics & State (Tier 3)
 - [x] rocq_reset / rocq_document_proofs
 
-## Phase 8: Iris Proof Mode Support
+## Phase 8: Git-diff based proof view diffing
+- [x] Add renderProofText helper (renders ProofView as plain text for diffing)
+- [x] Add diffText helper (shells out to `git diff --no-index --histogram`)
+- [x] Rewrite formatDeltaResults to use line-level git diff
+- [x] Remove set-based writeHypothesesDiff
+- [x] Update tests for new diff format (including multi-line hypothesis test)
+
+## Phase 9: Iris Proof Mode Support
 - [ ] Investigate vsrocqtop proof view output for Iris goals (where do spatial/persistent hypotheses appear?)
 - [ ] Detect Iris proof mode (e.g. goal contains `------□` / `------∗` separators)
 - [ ] Parse Iris goal structure: persistent context, spatial context, conclusion
-- [ ] Diff Iris contexts separately (line-level or parsed hypothesis-level)
-- [ ] Keep current Rocq-level hypothesis diff for standard proof mode
+- [ ] Line-level diffing now handled by git diff (phase 8)
 - [ ] Tests: verify Iris context diff output
 
 ## MVP milestone: Phase 1–4 complete, can interactively prove a .v file via MCP.

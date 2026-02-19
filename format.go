@@ -5,14 +5,15 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // formatDeltaResults formats proof state as a delta against the previous proof view.
-// Focused goal (goal 1) is shown in full; non-focused goals are summarized.
-// Hypotheses are diffed against the previous focused goal.
+// When prev is non-nil, renders both as plain text and uses git diff for a line-level diff.
 func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
 	var sb strings.Builder
 
@@ -35,30 +36,18 @@ func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp
 			}
 		}
 
-		// Focused goal (goal 1): full detail with hypothesis diff.
-		g := pv.Goals[0]
-		sb.WriteString("\nFocused Goal")
-		if g.ID != "" {
-			fmt.Fprintf(&sb, " (%s)", g.ID)
-		}
-		sb.WriteString(":\n")
-
-		var prevGoal *ProofGoal
-		if prev != nil && len(prev.Goals) > 0 {
-			prevGoal = &prev.Goals[0]
-		}
-		writeHypothesesDiff(&sb, prevGoal, &g)
-		sb.WriteString("  ────────────────────\n")
-		fmt.Fprintf(&sb, "  %s\n", g.Goal)
-
-		// Non-focused goals: just conclusion.
-		for i := 1; i < len(pv.Goals); i++ {
-			ng := pv.Goals[i]
-			fmt.Fprintf(&sb, "\nGoal %d", i+1)
-			if ng.ID != "" {
-				fmt.Fprintf(&sb, " (%s)", ng.ID)
+		if prev == nil || prevCount == 0 {
+			// No previous state — show full proof text.
+			sb.WriteString(renderProofText(pv))
+		} else {
+			// Diff previous vs current proof text.
+			d := diffText(renderProofText(prev), renderProofText(pv))
+			if d == "" {
+				sb.WriteString("\nNo changes to proof state.\n")
+			} else {
+				sb.WriteString("\n")
+				sb.WriteString(d)
 			}
-			fmt.Fprintf(&sb, ": %s\n", ng.Goal)
 		}
 	}
 
@@ -76,6 +65,90 @@ func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp
 	}
 
 	return textResult(sb.String())
+}
+
+// renderProofText renders a proof view as plain text for diffing.
+func renderProofText(pv *ProofView) string {
+	var sb strings.Builder
+	for i, g := range pv.Goals {
+		if i > 0 {
+			sb.WriteString("\n")
+		}
+		fmt.Fprintf(&sb, "Goal %d", i+1)
+		if g.ID != "" {
+			fmt.Fprintf(&sb, " (%s)", g.ID)
+		}
+		sb.WriteString(":\n")
+		for _, h := range g.Hypotheses {
+			fmt.Fprintf(&sb, "  %s\n", h)
+		}
+		sb.WriteString("  ────────────────────\n")
+		fmt.Fprintf(&sb, "  %s\n", g.Goal)
+	}
+	return sb.String()
+}
+
+// diffText computes a line-level diff between old and new text using git diff.
+// Returns just the hunk lines (@@, +, -) with file headers stripped.
+// Returns empty string if texts are identical.
+func diffText(old, new string) string {
+	if old == new {
+		return ""
+	}
+
+	oldFile, err := os.CreateTemp("", "rocq-diff-old-*")
+	if err != nil {
+		return fallbackDiff(new)
+	}
+	defer os.Remove(oldFile.Name())
+
+	newFile, err := os.CreateTemp("", "rocq-diff-new-*")
+	if err != nil {
+		oldFile.Close()
+		return fallbackDiff(new)
+	}
+	defer os.Remove(newFile.Name())
+
+	oldFile.WriteString(old)
+	oldFile.Close()
+	newFile.WriteString(new)
+	newFile.Close()
+
+	cmd := exec.Command("git", "diff", "--no-index", "--histogram", "--unified=0", oldFile.Name(), newFile.Name())
+	out, _ := cmd.Output()
+	// git diff exits 1 when files differ, so ignore exit error.
+	if len(out) == 0 {
+		// Shouldn't happen since old != new, but handle gracefully.
+		return fallbackDiff(new)
+	}
+
+	return parseDiffHunks(string(out))
+}
+
+// parseDiffHunks extracts just the @@ hunk headers and +/- lines from git diff output.
+func parseDiffHunks(raw string) string {
+	var sb strings.Builder
+	for _, line := range strings.Split(raw, "\n") {
+		if strings.HasPrefix(line, "@@") || strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-") {
+			// Skip file headers (--- a/..., +++ b/...).
+			if strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") {
+				continue
+			}
+			sb.WriteString(line)
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
+
+// fallbackDiff returns the new text prefixed with + on each line.
+// Used when git diff is unavailable.
+func fallbackDiff(text string) string {
+	var sb strings.Builder
+	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		fmt.Fprintf(&sb, "+%s\n", line)
+	}
+	return sb.String()
 }
 
 // formatFullResults formats the complete proof state without deltas.
@@ -115,42 +188,6 @@ func formatFullResults(pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
 	}
 
 	return textResult(sb.String())
-}
-
-// writeHypothesesDiff writes hypotheses for the focused goal, annotating additions/removals
-// relative to the previous focused goal.
-func writeHypothesesDiff(sb *strings.Builder, prev *ProofGoal, cur *ProofGoal) {
-	if prev == nil {
-		// No previous state — show all hypotheses as-is.
-		for _, h := range cur.Hypotheses {
-			fmt.Fprintf(sb, "  %s\n", h)
-		}
-		return
-	}
-
-	prevSet := make(map[string]bool, len(prev.Hypotheses))
-	for _, h := range prev.Hypotheses {
-		prevSet[h] = true
-	}
-	curSet := make(map[string]bool, len(cur.Hypotheses))
-	for _, h := range cur.Hypotheses {
-		curSet[h] = true
-	}
-
-	// Show removed hypotheses first.
-	for _, h := range prev.Hypotheses {
-		if !curSet[h] {
-			fmt.Fprintf(sb, "  - %s\n", h)
-		}
-	}
-	// Show current hypotheses, marking new ones.
-	for _, h := range cur.Hypotheses {
-		if !prevSet[h] {
-			fmt.Fprintf(sb, "  + %s\n", h)
-		} else {
-			fmt.Fprintf(sb, "  %s\n", h)
-		}
-	}
 }
 
 // formatDiagnostics appends diagnostic output to a string builder.
