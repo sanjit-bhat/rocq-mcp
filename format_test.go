@@ -7,18 +7,13 @@ import (
 
 func TestFormatDeltaResults_NoPrevious(t *testing.T) {
 	pv := &ProofView{
-		Goals: []ProofGoal{
-			{ID: "1", Goal: "0 + n = n", Hypotheses: []string{"n : nat"}},
-		},
+		GoalCount: 1,
+		GoalID:    "1",
+		GoalText:  "  n : nat\n  ────────────────────\n  0 + n = n\n",
 	}
 	result := formatDeltaResults(nil, pv, nil)
 	got := resultText(result)
-	want := `=== Proof Goals: 1 ===
-Goal 1 (1):
-  n : nat
-  ────────────────────
-  0 + n = n
-`
+	want := "Goal 1 (1):\n  n : nat\n  ────────────────────\n  0 + n = n\n"
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
@@ -26,29 +21,30 @@ Goal 1 (1):
 
 func TestFormatDeltaResults_GoalCountDelta(t *testing.T) {
 	prev := &ProofView{
-		Goals: []ProofGoal{
-			{Goal: "A /\\ B"},
-		},
+		GoalCount: 1,
+		GoalID:    "1",
+		GoalText:  "  ────────────────────\n  A /\\ B\n",
 	}
 	cur := &ProofView{
-		Goals: []ProofGoal{
-			{Goal: "A"},
-			{Goal: "B"},
-		},
+		GoalCount: 2,
+		GoalID:    "2",
+		GoalText:  "  ────────────────────\n  A\n",
 	}
 	result := formatDeltaResults(prev, cur, nil)
 	got := resultText(result)
-	if !strings.Contains(got, "=== Proof Goals: 2 (+1) ===") {
-		t.Errorf("expected goal count delta.\ngot:\n%s", got)
+	if !strings.Contains(got, "New focused goal:") {
+		t.Errorf("expected new focused goal note.\ngot:\n%s", got)
 	}
-	if !strings.Contains(got, "+Goal 2:") {
-		t.Errorf("expected added Goal 2 in diff.\ngot:\n%s", got)
+	if !strings.Contains(got, "2 goals remaining") {
+		t.Errorf("expected 2 goals remaining.\ngot:\n%s", got)
 	}
 }
 
 func TestFormatDeltaResults_NoGoals(t *testing.T) {
 	prev := &ProofView{
-		Goals: []ProofGoal{{Goal: "True"}},
+		GoalCount: 1,
+		GoalID:    "1",
+		GoalText:  "  ────────────────────\n  True\n",
 	}
 	cur := &ProofView{}
 	result := formatDeltaResults(prev, cur, nil)
@@ -71,10 +67,7 @@ func TestFormatDeltaResults_WithDiagnostics(t *testing.T) {
 		},
 	})
 	got := resultText(result)
-	want := `
-=== Diagnostics ===
-[error] line 6:0–6:10: type error
-`
+	want := "\n=== Diagnostics ===\n[error] line 6:0–6:10: type error\n"
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
@@ -82,9 +75,9 @@ func TestFormatDeltaResults_WithDiagnostics(t *testing.T) {
 
 func TestFormatDeltaResults_NoChanges(t *testing.T) {
 	pv := &ProofView{
-		Goals: []ProofGoal{
-			{Goal: "P", Hypotheses: []string{"n : nat"}},
-		},
+		GoalCount: 1,
+		GoalID:    "1",
+		GoalText:  "  n : nat\n  ────────────────────\n  P\n",
 	}
 	result := formatDeltaResults(pv, pv, nil)
 	got := resultText(result)
@@ -95,47 +88,29 @@ func TestFormatDeltaResults_NoChanges(t *testing.T) {
 
 func TestFormatFullResults(t *testing.T) {
 	pv := &ProofView{
-		Goals: []ProofGoal{
-			{ID: "1", Goal: "A", Hypotheses: []string{"H : True"}},
-			{ID: "2", Goal: "B", Hypotheses: []string{"H : True", "n : nat"}},
-		},
+		GoalCount: 2,
+		GoalID:    "1",
+		GoalText:  "  H : True\n  ────────────────────\n  A\n",
 	}
 	result := formatFullResults(pv, nil)
 	got := resultText(result)
-	want := `=== Proof Goals: 2 ===
-Goal 1 (1):
-  H : True
-  ────────────────────
-  A
-
-Goal 2 (2):
-  H : True
-  n : nat
-  ────────────────────
-  B
-`
+	want := "Goal 1 (1):\n  H : True\n  ────────────────────\n  A\n\n2 goals remaining\n"
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
 }
 
-func TestRenderProofText(t *testing.T) {
-	pv := &ProofView{
-		Goals: []ProofGoal{
-			{ID: "1", Goal: "A", Hypotheses: []string{"H : True"}},
-			{Goal: "B"},
-		},
+func TestRenderGoalText(t *testing.T) {
+	got := renderGoalText([]string{"H : True", "n : nat"}, "A")
+	want := "  H : True\n  n : nat\n  ────────────────────\n  A\n"
+	if got != want {
+		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
-	got := renderProofText(pv)
-	want := `Goal 1 (1):
-  H : True
-  ────────────────────
-  A
+}
 
-Goal 2:
-  ────────────────────
-  B
-`
+func TestRenderGoalText_NoHypotheses(t *testing.T) {
+	got := renderGoalText(nil, "True")
+	want := "  ────────────────────\n  True\n"
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
@@ -162,5 +137,26 @@ index 1234..5678 100644
 	}
 	if !strings.Contains(got, "+new line") {
 		t.Errorf("added line should be present.\ngot:\n%s", got)
+	}
+}
+
+func TestFormatDeltaResults_NewFocusedGoal(t *testing.T) {
+	prev := &ProofView{
+		GoalCount: 2,
+		GoalID:    "1",
+		GoalText:  "  H : True\n  ────────────────────\n  A\n",
+	}
+	cur := &ProofView{
+		GoalCount: 1,
+		GoalID:    "2",
+		GoalText:  "  H : True\n  ────────────────────\n  B\n",
+	}
+	result := formatDeltaResults(prev, cur, nil)
+	got := resultText(result)
+	if !strings.Contains(got, "New focused goal:") {
+		t.Errorf("expected 'New focused goal:' annotation.\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "Goal 1 (2):") {
+		t.Errorf("expected goal header with new ID.\ngot:\n%s", got)
 	}
 }

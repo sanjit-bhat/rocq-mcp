@@ -13,42 +13,46 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// renderGoalText renders a single goal body: hypotheses + separator + conclusion.
+// This is the pre-rendered text stored in ProofView.GoalText.
+func renderGoalText(hyps []string, conclusion string) string {
+	var sb strings.Builder
+	for _, h := range hyps {
+		fmt.Fprintf(&sb, "  %s\n", h)
+	}
+	sb.WriteString("  ────────────────────\n")
+	fmt.Fprintf(&sb, "  %s\n", conclusion)
+	return sb.String()
+}
+
 // formatDeltaResults formats proof state as a delta against the previous proof view.
-// When prev is non-nil, renders both as plain text and uses git diff for a line-level diff.
+// When prev is non-nil, diffs GoalText using git diff for a line-level diff.
 func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
 	var sb strings.Builder
 
-	if pv != nil && len(pv.Goals) > 0 {
-		// Header with goal count and change.
-		prevCount := 0
-		if prev != nil {
-			prevCount = len(prev.Goals)
+	if pv != nil && pv.GoalCount > 0 {
+		// Render header with goal ID.
+		if prev != nil && prev.GoalCount > 0 && prev.GoalID != pv.GoalID {
+			sb.WriteString("New focused goal:\n")
 		}
-		if prev == nil || prevCount == 0 {
-			fmt.Fprintf(&sb, "=== Proof Goals: %d ===\n", len(pv.Goals))
-		} else {
-			delta := len(pv.Goals) - prevCount
-			if delta > 0 {
-				fmt.Fprintf(&sb, "=== Proof Goals: %d (+%d) ===\n", len(pv.Goals), delta)
-			} else if delta < 0 {
-				fmt.Fprintf(&sb, "=== Proof Goals: %d (%d) ===\n", len(pv.Goals), delta)
-			} else {
-				fmt.Fprintf(&sb, "=== Proof Goals: %d ===\n", len(pv.Goals))
-			}
-		}
+		fmt.Fprintf(&sb, "Goal 1 (%s):\n", pv.GoalID)
 
-		if prev == nil || prevCount == 0 {
-			// No previous state — show full proof text.
-			sb.WriteString(renderProofText(pv))
+		if prev == nil || prev.GoalCount == 0 {
+			// No previous state — show full goal text.
+			sb.WriteString(pv.GoalText)
 		} else {
-			// Diff previous vs current proof text.
-			d := diffText(renderProofText(prev), renderProofText(pv))
+			// Diff previous vs current goal text.
+			d := diffText(prev.GoalText, pv.GoalText)
 			if d == "" {
 				sb.WriteString("\nNo changes to proof state.\n")
 			} else {
 				sb.WriteString("\n")
 				sb.WriteString(d)
 			}
+		}
+
+		if pv.GoalCount > 1 {
+			fmt.Fprintf(&sb, "\n%d goals remaining\n", pv.GoalCount)
 		}
 	}
 
@@ -66,27 +70,6 @@ func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp
 	}
 
 	return textResult(sb.String())
-}
-
-// renderProofText renders a proof view as plain text for diffing.
-func renderProofText(pv *ProofView) string {
-	var sb strings.Builder
-	for i, g := range pv.Goals {
-		if i > 0 {
-			sb.WriteString("\n")
-		}
-		fmt.Fprintf(&sb, "Goal %d", i+1)
-		if g.ID != "" {
-			fmt.Fprintf(&sb, " (%s)", g.ID)
-		}
-		sb.WriteString(":\n")
-		for _, h := range g.Hypotheses {
-			fmt.Fprintf(&sb, "  %s\n", h)
-		}
-		sb.WriteString("  ────────────────────\n")
-		fmt.Fprintf(&sb, "  %s\n", g.Goal)
-	}
-	return sb.String()
 }
 
 // diffText computes a line-level diff between old and new text using git diff.
@@ -145,22 +128,11 @@ func parseDiffHunks(raw string) string {
 func formatFullResults(pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
 	var sb strings.Builder
 
-	if pv != nil && len(pv.Goals) > 0 {
-		fmt.Fprintf(&sb, "=== Proof Goals: %d ===\n", len(pv.Goals))
-		for i, g := range pv.Goals {
-			if i > 0 {
-				sb.WriteString("\n")
-			}
-			fmt.Fprintf(&sb, "Goal %d", i+1)
-			if g.ID != "" {
-				fmt.Fprintf(&sb, " (%s)", g.ID)
-			}
-			sb.WriteString(":\n")
-			for _, h := range g.Hypotheses {
-				fmt.Fprintf(&sb, "  %s\n", h)
-			}
-			sb.WriteString("  ────────────────────\n")
-			fmt.Fprintf(&sb, "  %s\n", g.Goal)
+	if pv != nil && pv.GoalCount > 0 {
+		fmt.Fprintf(&sb, "Goal 1 (%s):\n", pv.GoalID)
+		sb.WriteString(pv.GoalText)
+		if pv.GoalCount > 1 {
+			fmt.Fprintf(&sb, "\n%d goals remaining\n", pv.GoalCount)
 		}
 	}
 
@@ -207,6 +179,7 @@ func formatDiagnostics(sb *strings.Builder, diags []Diagnostic) {
 
 // parseProofView parses the vsrocq proofView notification params.
 // vsrocq uses Ppcmd (pretty-printer command) trees for goals and hypotheses.
+// The focused goal (Goals[0]) is pre-rendered to text; only GoalCount is kept for the rest.
 func parseProofView(params json.RawMessage) *ProofView {
 	var raw struct {
 		Proof struct {
@@ -222,17 +195,22 @@ func parseProofView(params json.RawMessage) *ProofView {
 		return nil
 	}
 
-	pv := &ProofView{}
-	for _, g := range raw.Proof.Goals {
-		goal := ProofGoal{
-			ID:   strings.TrimSpace(string(g.ID)),
-			Goal: renderPpcmd(g.Goal),
-		}
-		for _, h := range g.Hypotheses {
-			goal.Hypotheses = append(goal.Hypotheses, renderPpcmd(h))
-		}
-		pv.Goals = append(pv.Goals, goal)
+	pv := &ProofView{
+		GoalCount: len(raw.Proof.Goals),
 	}
+
+	// Pre-render only the focused goal (Goals[0]).
+	if len(raw.Proof.Goals) > 0 {
+		g := raw.Proof.Goals[0]
+		pv.GoalID = strings.TrimSpace(string(g.ID))
+		conclusion := renderPpcmd(g.Goal)
+		var hyps []string
+		for _, h := range g.Hypotheses {
+			hyps = append(hyps, renderPpcmd(h))
+		}
+		pv.GoalText = renderGoalText(hyps, conclusion)
+	}
+
 	for _, m := range raw.Messages {
 		// messages items can be [severity, ppcmd_tree] or plain ppcmd
 		var pair []json.RawMessage

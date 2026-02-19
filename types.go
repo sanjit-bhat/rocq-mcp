@@ -2,17 +2,13 @@ package main
 
 // types.go — shared domain types for proof goals, diagnostics, and LSP positions.
 
-// ProofGoal represents a single goal in a proof view.
-type ProofGoal struct {
-	ID         string   `json:"id"`
-	Goal       string   `json:"goal"`
-	Hypotheses []string `json:"hypotheses"`
-}
-
-// ProofView is the structured proof state from vsrocq.
+// ProofView stores the focused goal as pre-rendered text, plus metadata.
+// Only the first focused goal (Goals[0]) is kept; GoalCount tracks the total.
 type ProofView struct {
-	Goals    []ProofGoal `json:"goals"`
-	Messages []string    `json:"messages"`
+	GoalCount int      // total number of focused goals
+	GoalID    string   // ID of the focused goal
+	GoalText  string   // pre-rendered: hypotheses + separator + conclusion
+	Messages  []string // prover messages
 }
 
 // Diagnostic is an LSP diagnostic.

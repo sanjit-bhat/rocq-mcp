@@ -58,6 +58,15 @@
 - [x] Remove set-based writeHypothesesDiff
 - [x] Update tests for new diff format (including multi-line hypothesis test)
 
+## Phase 8.5: Pre-render proof text, focused goal only
+- [x] Flatten ProofView: remove ProofGoal, store GoalCount/GoalID/GoalText/Messages
+- [x] Pre-render focused goal (Goals[0]) to text in parseProofView
+- [x] Add renderGoalText helper, remove renderProofText
+- [x] Simplify formatDeltaResults: diff GoalText, "New focused goal" annotation on ID change
+- [x] Simplify formatFullResults: show focused goal + "N goals remaining"
+- [x] Update format_test.go for new ProofView shape
+- [x] Add testdata/split_goals.v and TestSplitGoals integration test
+
 ## Phase 9: Iris Proof Mode Support
 - [ ] Investigate vsrocqtop proof view output for Iris goals (where do spatial/persistent hypotheses appear?)
 - [ ] Detect Iris proof mode (e.g. goal contains `------□` / `------∗` separators)

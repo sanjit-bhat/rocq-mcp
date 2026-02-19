@@ -99,7 +99,7 @@ func TestOpenAndCheckError(t *testing.T) {
 				}
 			}
 		case pv := <-doc.proofViewCh:
-			t.Logf("proofView: %d goals", len(pv.Goals))
+			t.Logf("proofView: %d goals", pv.GoalCount)
 		case <-deadline:
 			t.Fatal("timed out waiting for error diagnostics")
 		}
@@ -224,6 +224,74 @@ func TestQuerySearch(t *testing.T) {
 	t.Logf("search result:\n%s", text)
 	if !strings.Contains(text, "plus_0_n") && !strings.Contains(text, "Search Results") {
 		t.Logf("note: search may not have found plus_0_n (result: %s)", text)
+	}
+}
+
+func TestSplitGoals(t *testing.T) {
+	sm := newStateManager(nil)
+	defer sm.shutdown()
+
+	path, _ := filepath.Abs("testdata/split_goals.v")
+	if err := sm.openDoc(path); err != nil {
+		t.Fatalf("openDoc: %v", err)
+	}
+
+	// Line 0: Theorem and_comm : forall A B : Prop, A /\ B -> B /\ A.
+	// Line 1: Proof.
+	// Line 2:   intros A B H.
+	// Line 3:   destruct H as [HA HB].
+	// Line 4:   split.
+	// Line 5:   - exact HB.
+	// Line 6:   - exact HA.
+	// Line 7: Qed.
+
+	// Step 1: After "intros A B H." — 1 goal, hypotheses A B H, conclusion B /\ A
+	result, _, _ := doCheck(sm, path, 3, 0)
+	text := resultText(result)
+	t.Logf("after intros:\n%s", text)
+	if !strings.Contains(text, "B /\\ A") {
+		t.Errorf("expected conclusion 'B /\\ A'.\ngot:\n%s", text)
+	}
+
+	// Get the proof state to check structure.
+	doc, _ := sm.getDoc(path)
+	if doc.ProofView == nil {
+		t.Fatal("expected non-nil ProofView after intros")
+	}
+	if doc.ProofView.GoalCount != 1 {
+		t.Errorf("expected 1 goal after intros, got %d", doc.ProofView.GoalCount)
+	}
+
+	// Step 2: After "destruct H as [HA HB]." — still 1 goal, H replaced by HA/HB
+	result, _, _ = doCheck(sm, path, 4, 0)
+	text = resultText(result)
+	t.Logf("after destruct:\n%s", text)
+	if doc.ProofView.GoalCount != 1 {
+		t.Errorf("expected 1 goal after destruct, got %d", doc.ProofView.GoalCount)
+	}
+
+	// Step 3: After "split." — 2 goals, conclusion changes to B
+	result, _, _ = doCheck(sm, path, 5, 0)
+	text = resultText(result)
+	t.Logf("after split:\n%s", text)
+	if doc.ProofView.GoalCount != 2 {
+		t.Errorf("expected 2 goals after split, got %d", doc.ProofView.GoalCount)
+	}
+	if !strings.Contains(text, "2 goals remaining") {
+		t.Errorf("expected '2 goals remaining'.\ngot:\n%s", text)
+	}
+
+	// Step 4: After "Qed." — proof complete, check the whole file.
+	result, _, _ = doCheck(sm, path, 8, 0)
+	text = resultText(result)
+	t.Logf("after Qed:\n%s", text)
+	// After Qed, goals should be 0 (proof complete).
+	if doc.ProofView.GoalCount != 0 {
+		t.Errorf("expected 0 goals after Qed, got %d", doc.ProofView.GoalCount)
+	}
+
+	if err := sm.closeDoc(path); err != nil {
+		t.Fatalf("closeDoc: %v", err)
 	}
 }
 
