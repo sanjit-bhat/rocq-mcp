@@ -3,6 +3,8 @@
     "allow": [
       "Edit(./**)",
       "Write(./**)",
+      "Edit(//tmp/**)",
+      "Write(//tmp/**)",
       "Read(//tmp/**)",
       "Glob(//tmp/**)",
       "Grep(//tmp/**)",
