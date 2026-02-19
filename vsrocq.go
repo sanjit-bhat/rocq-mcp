@@ -119,20 +119,14 @@ func (c *vsrocqClient) handleServerRequest(id int64, method string, params json.
 			log.Printf("marshal workspace/configuration response: %v", err)
 			return
 		}
-		if err := c.codec.encode(&jsonRPCResponse{
-			JSONRPC: "2.0",
-			ID:      id,
-			Result:  data,
-		}); err != nil {
+		resp := &jsonRPCResponse{JSONRPC: "2.0", ID: id, Result: data}
+		if err := c.codec.encode(resp); err != nil {
 			log.Printf("send workspace/configuration response: %v", err)
 		}
 	default:
 		log.Printf("unhandled server request: %s (id=%d)", method, id)
-		if err := c.codec.encode(&jsonRPCResponse{
-			JSONRPC: "2.0",
-			ID:      id,
-			Result:  json.RawMessage("null"),
-		}); err != nil {
+		resp := &jsonRPCResponse{JSONRPC: "2.0", ID: id, Result: json.RawMessage("null")}
+		if err := c.codec.encode(resp); err != nil {
 			log.Printf("send default response: %v", err)
 		}
 	}
@@ -160,12 +154,8 @@ func (c *vsrocqClient) request(method string, params any) (json.RawMessage, erro
 			return nil, err
 		}
 	}
-	if err := c.codec.encode(&jsonRPCRequest{
-		JSONRPC: "2.0",
-		ID:      id,
-		Method:  method,
-		Params:  rawParams,
-	}); err != nil {
+	req := &jsonRPCRequest{JSONRPC: "2.0", ID: id, Method: method, Params: rawParams}
+	if err := c.codec.encode(req); err != nil {
 		c.pendingMu.Lock()
 		delete(c.pending, id)
 		c.pendingMu.Unlock()
