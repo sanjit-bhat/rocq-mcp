@@ -38,6 +38,13 @@
 - [x] rocq_get_proof_state tool: return full proof state on demand
 - [x] Tests: verify delta output, verify full state tool
 
+## Refactor: File Organization
+- [x] Extract shared types to `types.go`
+- [x] Extract proof operations to `proof.go`
+- [x] Extract formatting/rendering to `format.go`
+- [x] Slim `state.go` to stateManager + document lifecycle
+- [x] Slim `tools.go` to MCP registration + helpers
+
 ## Phase 6: Query Tools (Tier 2)
 - [ ] rocq_about / rocq_check_type / rocq_locate / rocq_print / rocq_search
 
