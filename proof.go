@@ -188,26 +188,7 @@ func doSearch(sm *stateManager, file string, pattern string) (*mcp.CallToolResul
 
 	// vsrocqtop sends searchResult notifications after the request response,
 	// so we need to wait briefly for them to arrive.
-	var results []searchResult
-	timer := time.NewTimer(2 * time.Second)
-	defer timer.Stop()
-	for {
-		select {
-		case r := <-resultCh:
-			results = append(results, r)
-			// Reset timer after each result — more may follow.
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			timer.Reset(200 * time.Millisecond)
-		case <-timer.C:
-			goto done
-		}
-	}
-done:
+	results := collectSearchResults(resultCh)
 
 	if len(results) == 0 {
 		return textResult("No results found."), nil, nil
@@ -219,4 +200,27 @@ done:
 		fmt.Fprintf(&sb, "%s : %s\n", r.Name, r.Statement)
 	}
 	return textResult(sb.String()), nil, nil
+}
+
+// collectSearchResults drains search results from the channel with a timeout.
+func collectSearchResults(ch <-chan searchResult) []searchResult {
+	var results []searchResult
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case r := <-ch:
+			results = append(results, r)
+			// Reset timer after each result — more may follow.
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(200 * time.Millisecond)
+		case <-timer.C:
+			return results
+		}
+	}
 }
