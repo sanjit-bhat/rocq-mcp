@@ -202,6 +202,79 @@ func doSearch(sm *stateManager, file string, pattern string) (*mcp.CallToolResul
 	return textResult(sb.String()), nil, nil
 }
 
+// doReset sends prover/resetRocq to reset the prover state for a document.
+func doReset(sm *stateManager, file string) (*mcp.CallToolResult, any, error) {
+	sm.mu.Lock()
+	doc, err := sm.getDoc(file)
+	if err != nil {
+		sm.mu.Unlock()
+		return errResult(err), nil, nil
+	}
+	drainChannels(doc)
+	sm.mu.Unlock()
+
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": doc.URI},
+	}
+	_, err = sm.client.request("prover/resetRocq", params)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+
+	// Clear cached proof state — it's no longer valid after reset.
+	sm.mu.Lock()
+	doc.ProofView = nil
+	doc.PrevProofView = nil
+	doc.Diagnostics = nil
+	sm.mu.Unlock()
+
+	return textResult("Reset " + file), nil, nil
+}
+
+// doDocumentProofs sends prover/documentProofs and returns the proof structure.
+func doDocumentProofs(sm *stateManager, file string) (*mcp.CallToolResult, any, error) {
+	sm.mu.Lock()
+	doc, err := sm.getDoc(file)
+	sm.mu.Unlock()
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": doc.URI},
+	}
+	result, err := sm.client.request("prover/documentProofs", params)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+
+	var resp struct {
+		Proofs []ProofBlock `json:"proofs"`
+	}
+	if err := json.Unmarshal(result, &resp); err != nil {
+		return errResult(fmt.Errorf("parse documentProofs: %w", err)), nil, nil
+	}
+
+	if len(resp.Proofs) == 0 {
+		return textResult("No proofs found in " + file), nil, nil
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "=== Proofs: %d ===\n", len(resp.Proofs))
+	for i, p := range resp.Proofs {
+		fmt.Fprintf(&sb, "\n--- Proof %d (lines %d–%d) ---\n",
+			i+1, p.Range.Start.Line+1, p.Range.End.Line+1)
+		fmt.Fprintf(&sb, "Statement: %s\n", p.Statement.Statement)
+		if len(p.Steps) > 0 {
+			fmt.Fprintf(&sb, "Steps:\n")
+			for _, s := range p.Steps {
+				fmt.Fprintf(&sb, "  L%d: %s\n", s.Range.Start.Line+1, s.Tactic)
+			}
+		}
+	}
+	return textResult(sb.String()), nil, nil
+}
+
 // collectSearchResults drains search results from the channel with a timeout.
 func collectSearchResults(ch <-chan searchResult) []searchResult {
 	var results []searchResult

@@ -38,3 +38,20 @@ type searchResult struct {
 	Name      string `json:"name"`
 	Statement string `json:"statement"`
 }
+
+// ProofBlock represents a proof in the document, as returned by prover/documentProofs.
+type ProofBlock struct {
+	Statement ProofStatement `json:"statement"`
+	Range     Range          `json:"range"`
+	Steps     []ProofStep    `json:"steps"`
+}
+
+type ProofStatement struct {
+	Statement string `json:"statement"`
+	Range     Range  `json:"range"`
+}
+
+type ProofStep struct {
+	Tactic string `json:"tactic"`
+	Range  Range  `json:"range"`
+}

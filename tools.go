@@ -142,6 +142,21 @@ func registerTools(server *mcp.Server, sm *stateManager) {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args searchArg) (*mcp.CallToolResult, any, error) {
 		return doSearch(sm, args.File, args.Pattern)
 	})
+
+	// Tier 3: Diagnostics & state.
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rocq_reset",
+		Description: "Reset the Rocq prover state for a file. Use when the prover is in a bad state.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args fileArg) (*mcp.CallToolResult, any, error) {
+		return doReset(sm, args.File)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rocq_document_proofs",
+		Description: "List all proof blocks in a file with their statements, tactics, and line ranges. Useful for navigating and understanding proof structure.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args fileArg) (*mcp.CallToolResult, any, error) {
+		return doDocumentProofs(sm, args.File)
+	})
 }
 
 func textResult(text string) *mcp.CallToolResult {
