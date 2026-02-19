@@ -49,6 +49,14 @@
 - [x] rocq_about / rocq_check_type / rocq_locate / rocq_print / rocq_search
 
 ## Phase 7: Diagnostics & State (Tier 3)
-- [ ] rocq_reset / rocq_document_state / rocq_document_proofs
+- [x] rocq_reset / rocq_document_proofs
+
+## Phase 8: Iris Proof Mode Support
+- [ ] Investigate vsrocqtop proof view output for Iris goals (where do spatial/persistent hypotheses appear?)
+- [ ] Detect Iris proof mode (e.g. goal contains `------□` / `------∗` separators)
+- [ ] Parse Iris goal structure: persistent context, spatial context, conclusion
+- [ ] Diff Iris contexts separately (line-level or parsed hypothesis-level)
+- [ ] Keep current Rocq-level hypothesis diff for standard proof mode
+- [ ] Tests: verify Iris context diff output
 
 ## MVP milestone: Phase 1–4 complete, can interactively prove a .v file via MCP.
