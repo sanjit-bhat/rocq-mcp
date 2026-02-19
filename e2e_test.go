@@ -101,4 +101,3 @@ func TestE2EMCPProofSession(t *testing.T) {
 		t.Fatalf("expected 'Closed', got: %s", text)
 	}
 }
-

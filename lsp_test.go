@@ -89,4 +89,3 @@ func TestDecodeContentLengthFraming(t *testing.T) {
 		t.Fatalf("expected method test, got %v", msg.Method)
 	}
 }
-
