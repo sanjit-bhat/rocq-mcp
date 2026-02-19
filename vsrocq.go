@@ -114,34 +114,63 @@ func (c *vsrocqClient) handleServerRequest(id int64, method string, params json.
 		for i := range results {
 			results[i] = settings
 		}
-		data, _ := json.Marshal(results)
-		c.codec.encode(&jsonRPCResponse{
+		data, err := json.Marshal(results)
+		if err != nil {
+			log.Printf("marshal workspace/configuration response: %v", err)
+			return
+		}
+		if err := c.codec.encode(&jsonRPCResponse{
 			JSONRPC: "2.0",
 			ID:      id,
 			Result:  data,
-		})
+		}); err != nil {
+			log.Printf("send workspace/configuration response: %v", err)
+		}
 	default:
 		log.Printf("unhandled server request: %s (id=%d)", method, id)
-		// Send empty response to avoid blocking.
-		c.codec.encode(&jsonRPCResponse{
+		if err := c.codec.encode(&jsonRPCResponse{
 			JSONRPC: "2.0",
 			ID:      id,
 			Result:  json.RawMessage("null"),
-		})
+		}); err != nil {
+			log.Printf("send default response: %v", err)
+		}
 	}
 }
 
 // request sends an LSP request and waits for the response.
 func (c *vsrocqClient) request(method string, params any) (json.RawMessage, error) {
-	id, err := c.codec.sendRequest(method, params)
-	if err != nil {
-		return nil, err
-	}
-
 	ch := make(chan *rawMessage, 1)
+
+	// Register the response channel before sending so readLoop can't
+	// deliver the response before we're listening.
+	id := c.codec.nextID.Add(1) - 1
 	c.pendingMu.Lock()
 	c.pending[id] = ch
 	c.pendingMu.Unlock()
+
+	var rawParams json.RawMessage
+	if params != nil {
+		var err error
+		rawParams, err = json.Marshal(params)
+		if err != nil {
+			c.pendingMu.Lock()
+			delete(c.pending, id)
+			c.pendingMu.Unlock()
+			return nil, err
+		}
+	}
+	if err := c.codec.encode(&jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      id,
+		Method:  method,
+		Params:  rawParams,
+	}); err != nil {
+		c.pendingMu.Lock()
+		delete(c.pending, id)
+		c.pendingMu.Unlock()
+		return nil, err
+	}
 
 	resp := <-ch
 	if resp.Error != nil {

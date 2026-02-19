@@ -55,7 +55,7 @@ func TestE2EMCPProofSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rocq_open: %v", err)
 	}
-	text := contentText(res)
+	text := resultText(res)
 	if !strings.Contains(text, "Opened") {
 		t.Fatalf("expected 'Opened', got: %s", text)
 	}
@@ -68,7 +68,7 @@ func TestE2EMCPProofSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rocq_check: %v", err)
 	}
-	text = contentText(res)
+	text = resultText(res)
 	t.Logf("rocq_check result:\n%s", text)
 	if !strings.Contains(text, "0 + n = n") {
 		t.Errorf("expected goal '0 + n = n', got:\n%s", text)
@@ -82,7 +82,7 @@ func TestE2EMCPProofSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rocq_check_all: %v", err)
 	}
-	text = contentText(res)
+	text = resultText(res)
 	t.Logf("rocq_check_all result:\n%s", text)
 	if strings.Contains(text, "error") {
 		t.Errorf("unexpected error: %s", text)
@@ -96,18 +96,9 @@ func TestE2EMCPProofSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rocq_close: %v", err)
 	}
-	text = contentText(res)
+	text = resultText(res)
 	if !strings.Contains(text, "Closed") {
 		t.Fatalf("expected 'Closed', got: %s", text)
 	}
 }
 
-func contentText(res *mcp.CallToolResult) string {
-	var parts []string
-	for _, c := range res.Content {
-		if tc, ok := c.(*mcp.TextContent); ok {
-			parts = append(parts, tc.Text)
-		}
-	}
-	return strings.Join(parts, "\n")
-}

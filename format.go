@@ -22,7 +22,7 @@ func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp
 		if prev != nil {
 			prevCount = len(prev.Goals)
 		}
-		if prevCount == 0 || prev == nil {
+		if prev == nil || prevCount == 0 {
 			fmt.Fprintf(&sb, "=== Proof Goals: %d ===\n", len(pv.Goals))
 		} else {
 			delta := len(pv.Goals) - prevCount

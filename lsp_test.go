@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
+	"strconv"
 	"testing"
 )
+
+func itoa(n int) string { return strconv.Itoa(n) }
 
 func TestCodecRoundTrip(t *testing.T) {
 	var buf bytes.Buffer
@@ -88,6 +90,3 @@ func TestDecodeContentLengthFraming(t *testing.T) {
 	}
 }
 
-func itoa(n int) string {
-	return fmt.Sprintf("%d", n)
-}
