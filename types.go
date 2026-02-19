@@ -31,3 +31,10 @@ type Position struct {
 	Line      int `json:"line"`
 	Character int `json:"character"`
 }
+
+// searchResult is a single result from prover/searchResult notifications.
+type searchResult struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Statement string `json:"statement"`
+}

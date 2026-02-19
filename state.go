@@ -31,12 +31,17 @@ type stateManager struct {
 	docs   map[string]*docState // keyed by URI
 	mu     sync.Mutex
 	args   []string // extra args for vsrocqtop
+
+	// Search result channels, keyed by search ID.
+	searchHandlers   map[string]chan searchResult
+	searchHandlersMu sync.Mutex
 }
 
 func newStateManager(args []string) *stateManager {
 	return &stateManager{
-		docs: make(map[string]*docState),
-		args: args,
+		docs:           make(map[string]*docState),
+		args:           args,
+		searchHandlers: make(map[string]chan searchResult),
 	}
 }
 
@@ -54,6 +59,7 @@ func (sm *stateManager) ensureClient() error {
 	// Register notification handlers.
 	client.onNotification("textDocument/publishDiagnostics", sm.handleDiagnostics)
 	client.onNotification("prover/proofView", sm.handleProofView)
+	client.onNotification("prover/searchResult", sm.handleSearchResult)
 	client.onNotification("prover/updateHighlights", func(params json.RawMessage) {})
 	client.onNotification("prover/moveCursor", func(params json.RawMessage) {})
 	client.onNotification("prover/blockOnError", func(params json.RawMessage) {})
@@ -222,6 +228,50 @@ func (sm *stateManager) handleProofView(params json.RawMessage) {
 	for _, doc := range sm.docs {
 		select {
 		case doc.proofViewCh <- pv:
+		default:
+		}
+	}
+}
+
+// registerSearchHandler registers a channel to receive search results for a given ID.
+func (sm *stateManager) registerSearchHandler(id string, ch chan searchResult) {
+	sm.searchHandlersMu.Lock()
+	defer sm.searchHandlersMu.Unlock()
+	sm.searchHandlers[id] = ch
+}
+
+// unregisterSearchHandler removes a search result channel.
+func (sm *stateManager) unregisterSearchHandler(id string) {
+	sm.searchHandlersMu.Lock()
+	defer sm.searchHandlersMu.Unlock()
+	delete(sm.searchHandlers, id)
+}
+
+// handleSearchResult processes prover/searchResult notifications.
+func (sm *stateManager) handleSearchResult(params json.RawMessage) {
+	var raw struct {
+		ID        string          `json:"id"`
+		Name      json.RawMessage `json:"name"`
+		Statement json.RawMessage `json:"statement"`
+	}
+	if err := json.Unmarshal(params, &raw); err != nil {
+		log.Printf("parse searchResult: %v", err)
+		return
+	}
+
+	result := searchResult{
+		ID:        raw.ID,
+		Name:      renderPpcmd(raw.Name),
+		Statement: renderPpcmd(raw.Statement),
+	}
+
+	sm.searchHandlersMu.Lock()
+	ch, ok := sm.searchHandlers[raw.ID]
+	sm.searchHandlersMu.Unlock()
+
+	if ok {
+		select {
+		case ch <- result:
 		default:
 		}
 	}

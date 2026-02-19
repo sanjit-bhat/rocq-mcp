@@ -1,8 +1,11 @@
 package main
 
-// proof.go — proof-checking operations: check, step, and result collection from vsrocq.
+// proof.go — proof-checking operations: check, step, query, and result collection from vsrocq.
 
 import (
+	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -128,4 +131,92 @@ func drainChannels(doc *docState) {
 			return
 		}
 	}
+}
+
+// doQuery sends a query request (about/check/locate/print) and returns the rendered result.
+// These are LSP requests that return a Ppcmd tree directly.
+func doQuery(sm *stateManager, file string, method string, pattern string) (*mcp.CallToolResult, any, error) {
+	sm.mu.Lock()
+	doc, err := sm.getDoc(file)
+	sm.mu.Unlock()
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": doc.URI, "version": doc.Version},
+		"position":     map[string]any{"line": 0, "character": 0},
+		"pattern":      pattern,
+	}
+	result, err := sm.client.request(method, params)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+
+	text := renderPpcmd(json.RawMessage(result))
+	if text == "" {
+		text = "No result."
+	}
+	return textResult(text), nil, nil
+}
+
+// doSearch sends a search request and collects results from prover/searchResult notifications.
+func doSearch(sm *stateManager, file string, pattern string) (*mcp.CallToolResult, any, error) {
+	sm.mu.Lock()
+	doc, err := sm.getDoc(file)
+	sm.mu.Unlock()
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+
+	// Register a channel to collect search results before sending the request.
+	searchID := fmt.Sprintf("search-%d", time.Now().UnixNano())
+	resultCh := make(chan searchResult, 256)
+	sm.registerSearchHandler(searchID, resultCh)
+	defer sm.unregisterSearchHandler(searchID)
+
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": doc.URI, "version": doc.Version},
+		"position":     map[string]any{"line": 0, "character": 0},
+		"pattern":      pattern,
+		"id":           searchID,
+	}
+	_, err = sm.client.request("prover/search", params)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+
+	// vsrocqtop sends searchResult notifications after the request response,
+	// so we need to wait briefly for them to arrive.
+	var results []searchResult
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case r := <-resultCh:
+			results = append(results, r)
+			// Reset timer after each result — more may follow.
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(200 * time.Millisecond)
+		case <-timer.C:
+			goto done
+		}
+	}
+done:
+
+	if len(results) == 0 {
+		return textResult("No results found."), nil, nil
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "=== Search Results: %d ===\n", len(results))
+	for _, r := range results {
+		fmt.Fprintf(&sb, "%s : %s\n", r.Name, r.Statement)
+	}
+	return textResult(sb.String()), nil, nil
 }

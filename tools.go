@@ -20,6 +20,16 @@ type checkArg struct {
 	Col  int    `json:"col" jsonschema:"0-indexed column number"`
 }
 
+type queryArg struct {
+	File    string `json:"file" jsonschema:"path to the .v file"`
+	Pattern string `json:"pattern" jsonschema:"the identifier or expression to query"`
+}
+
+type searchArg struct {
+	File    string `json:"file" jsonschema:"path to the .v file"`
+	Pattern string `json:"pattern" jsonschema:"search pattern (e.g. 'nat -> nat', '_ + _ = _ + _')"`
+}
+
 // registerTools registers all MCP tools on the server.
 func registerTools(server *mcp.Server, sm *stateManager) {
 	// Tier 1: Core proof interaction.
@@ -95,6 +105,42 @@ func registerTools(server *mcp.Server, sm *stateManager) {
 			return textResult("No proof state available. Run rocq_check or rocq_step_forward first."), nil, nil
 		}
 		return formatFullResults(doc.ProofView, doc.Diagnostics), nil, nil
+	})
+
+	// Tier 2: Query tools.
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rocq_about",
+		Description: "Show information about an identifier (type, module, etc). Like Rocq's 'About' command.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args queryArg) (*mcp.CallToolResult, any, error) {
+		return doQuery(sm, args.File, "prover/about", args.Pattern)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rocq_check_type",
+		Description: "Check the type of an expression. Like Rocq's 'Check' command.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args queryArg) (*mcp.CallToolResult, any, error) {
+		return doQuery(sm, args.File, "prover/check", args.Pattern)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rocq_locate",
+		Description: "Locate the defining module of an identifier. Like Rocq's 'Locate' command.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args queryArg) (*mcp.CallToolResult, any, error) {
+		return doQuery(sm, args.File, "prover/locate", args.Pattern)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rocq_print",
+		Description: "Print the full definition of an identifier. Like Rocq's 'Print' command.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args queryArg) (*mcp.CallToolResult, any, error) {
+		return doQuery(sm, args.File, "prover/print", args.Pattern)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rocq_search",
+		Description: "Search for lemmas matching a pattern. Like Rocq's 'Search' command. Results may be large; use specific patterns.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args searchArg) (*mcp.CallToolResult, any, error) {
+		return doSearch(sm, args.File, args.Pattern)
 	})
 }
 

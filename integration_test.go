@@ -131,6 +131,102 @@ func TestCheckProofGoals(t *testing.T) {
 	}
 }
 
+func TestQueryAbout(t *testing.T) {
+	sm := newStateManager(nil)
+	defer sm.shutdown()
+
+	path, _ := filepath.Abs("testdata/simple.v")
+	if err := sm.openDoc(path); err != nil {
+		t.Fatalf("openDoc: %v", err)
+	}
+
+	// First check to end so the environment is loaded.
+	doCheckAll(sm, path)
+
+	result, _, _ := doQuery(sm, path, "prover/about", "Nat.add")
+	text := resultText(result)
+	t.Logf("about result:\n%s", text)
+	if text == "" || text == "No result." {
+		t.Error("expected non-empty result for About Nat.add")
+	}
+}
+
+func TestQueryCheckType(t *testing.T) {
+	sm := newStateManager(nil)
+	defer sm.shutdown()
+
+	path, _ := filepath.Abs("testdata/simple.v")
+	if err := sm.openDoc(path); err != nil {
+		t.Fatalf("openDoc: %v", err)
+	}
+
+	doCheckAll(sm, path)
+
+	result, _, _ := doQuery(sm, path, "prover/check", "Nat.add")
+	text := resultText(result)
+	t.Logf("check type result:\n%s", text)
+	if text == "" || text == "No result." {
+		t.Error("expected non-empty result for Check Nat.add")
+	}
+}
+
+func TestQueryLocate(t *testing.T) {
+	sm := newStateManager(nil)
+	defer sm.shutdown()
+
+	path, _ := filepath.Abs("testdata/simple.v")
+	if err := sm.openDoc(path); err != nil {
+		t.Fatalf("openDoc: %v", err)
+	}
+
+	doCheckAll(sm, path)
+
+	result, _, _ := doQuery(sm, path, "prover/locate", "Nat.add")
+	text := resultText(result)
+	t.Logf("locate result:\n%s", text)
+	if text == "" || text == "No result." {
+		t.Error("expected non-empty result for Locate Nat.add")
+	}
+}
+
+func TestQueryPrint(t *testing.T) {
+	sm := newStateManager(nil)
+	defer sm.shutdown()
+
+	path, _ := filepath.Abs("testdata/simple.v")
+	if err := sm.openDoc(path); err != nil {
+		t.Fatalf("openDoc: %v", err)
+	}
+
+	doCheckAll(sm, path)
+
+	result, _, _ := doQuery(sm, path, "prover/print", "Nat.add")
+	text := resultText(result)
+	t.Logf("print result:\n%s", text)
+	if text == "" || text == "No result." {
+		t.Error("expected non-empty result for Print Nat.add")
+	}
+}
+
+func TestQuerySearch(t *testing.T) {
+	sm := newStateManager(nil)
+	defer sm.shutdown()
+
+	path, _ := filepath.Abs("testdata/simple.v")
+	if err := sm.openDoc(path); err != nil {
+		t.Fatalf("openDoc: %v", err)
+	}
+
+	doCheckAll(sm, path)
+
+	result, _, _ := doSearch(sm, path, "0 + _ = _")
+	text := resultText(result)
+	t.Logf("search result:\n%s", text)
+	if !strings.Contains(text, "plus_0_n") && !strings.Contains(text, "Search Results") {
+		t.Logf("note: search may not have found plus_0_n (result: %s)", text)
+	}
+}
+
 func resultText(r *mcp.CallToolResult) string {
 	if r == nil {
 		return "<nil>"

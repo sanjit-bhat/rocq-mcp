@@ -46,7 +46,7 @@
 - [x] Slim `tools.go` to MCP registration + helpers
 
 ## Phase 6: Query Tools (Tier 2)
-- [ ] rocq_about / rocq_check_type / rocq_locate / rocq_print / rocq_search
+- [x] rocq_about / rocq_check_type / rocq_locate / rocq_print / rocq_search
 
 ## Phase 7: Diagnostics & State (Tier 3)
 - [ ] rocq_reset / rocq_document_state / rocq_document_proofs
