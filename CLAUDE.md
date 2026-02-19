@@ -9,5 +9,8 @@ rules:
 i've given permission for you to read that dir.
 - we're using github.com/modelcontextprotocol/go-sdk.
 - commit checkpoints. write concise, descriptive commits.
+- write commit messages to `/tmp/claude-commit-msg.txt`,
+  then run `git commit -F /tmp/claude-commit-msg.txt`.
+  this avoids multi-line shell quoting issues with the `Bash(git *)` permission pattern.
 - update your plan.md whenever you're done with something. commit that.
 - test often to make sure you're on the right track.
