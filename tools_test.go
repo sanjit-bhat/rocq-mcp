@@ -8,38 +8,27 @@ import (
 func TestFormatDeltaResults_NoPrevious(t *testing.T) {
 	pv := &ProofView{
 		Goals: []ProofGoal{
-			{
-				ID:         "1",
-				Goal:       "0 + n = n",
-				Hypotheses: []string{"n : nat"},
-			},
+			{ID: "1", Goal: "0 + n = n", Hypotheses: []string{"n : nat"}},
 		},
 	}
 	result := formatDeltaResults(nil, pv, nil)
-	text := resultText(result)
+	got := resultText(result)
+	want := `=== Proof Goals: 1 ===
 
-	if !strings.Contains(text, "Proof Goals: 1") {
-		t.Errorf("expected goal count, got:\n%s", text)
-	}
-	if !strings.Contains(text, "Focused Goal") {
-		t.Errorf("expected focused goal header, got:\n%s", text)
-	}
-	if !strings.Contains(text, "n : nat") {
-		t.Errorf("expected hypothesis, got:\n%s", text)
-	}
-	if !strings.Contains(text, "0 + n = n") {
-		t.Errorf("expected goal conclusion, got:\n%s", text)
-	}
-	// No previous state — hypotheses should not be prefixed with +/-.
-	if strings.Contains(text, "+ n : nat") || strings.Contains(text, "- n : nat") {
-		t.Errorf("first proof view should not have +/- markers:\n%s", text)
+Focused Goal (1):
+  n : nat
+  ────────────────────
+  0 + n = n
+`
+	if got != want {
+		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
 }
 
 func TestFormatDeltaResults_AddedHypothesis(t *testing.T) {
 	prev := &ProofView{
 		Goals: []ProofGoal{
-			{Goal: "forall n, 0 + n = n", Hypotheses: nil},
+			{Goal: "forall n, 0 + n = n"},
 		},
 	}
 	cur := &ProofView{
@@ -48,10 +37,16 @@ func TestFormatDeltaResults_AddedHypothesis(t *testing.T) {
 		},
 	}
 	result := formatDeltaResults(prev, cur, nil)
-	text := resultText(result)
+	got := resultText(result)
+	want := `=== Proof Goals: 1 ===
 
-	if !strings.Contains(text, "+ n : nat") {
-		t.Errorf("expected added hypothesis marker, got:\n%s", text)
+Focused Goal:
+  + n : nat
+  ────────────────────
+  0 + n = n
+`
+	if got != want {
+		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
 }
 
@@ -67,14 +62,17 @@ func TestFormatDeltaResults_RemovedHypothesis(t *testing.T) {
 		},
 	}
 	result := formatDeltaResults(prev, cur, nil)
-	text := resultText(result)
+	got := resultText(result)
+	want := `=== Proof Goals: 1 ===
 
-	if !strings.Contains(text, "- H : True") {
-		t.Errorf("expected removed hypothesis marker, got:\n%s", text)
-	}
-	// n : nat should not be marked.
-	if strings.Contains(text, "+ n : nat") {
-		t.Errorf("unchanged hypothesis should not be marked as added:\n%s", text)
+Focused Goal:
+  - H : True
+  n : nat
+  ────────────────────
+  P
+`
+	if got != want {
+		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
 }
 
@@ -91,14 +89,17 @@ func TestFormatDeltaResults_GoalCountDelta(t *testing.T) {
 		},
 	}
 	result := formatDeltaResults(prev, cur, nil)
-	text := resultText(result)
+	got := resultText(result)
+	want := `=== Proof Goals: 2 (+1) ===
 
-	if !strings.Contains(text, "Proof Goals: 2 (+1)") {
-		t.Errorf("expected goal count delta, got:\n%s", text)
-	}
-	// Goal 2 should just show conclusion, no hypotheses.
-	if !strings.Contains(text, "Goal 2: B") {
-		t.Errorf("expected summarized non-focused goal, got:\n%s", text)
+Focused Goal:
+  ────────────────────
+  A
+
+Goal 2: B
+`
+	if got != want {
+		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
 }
 
@@ -116,10 +117,15 @@ func TestFormatDeltaResults_GoalsSolved(t *testing.T) {
 		},
 	}
 	result := formatDeltaResults(prev, cur, nil)
-	text := resultText(result)
+	got := resultText(result)
+	want := `=== Proof Goals: 1 (-2) ===
 
-	if !strings.Contains(text, "Proof Goals: 1 (-2)") {
-		t.Errorf("expected negative goal count delta, got:\n%s", text)
+Focused Goal:
+  ────────────────────
+  B
+`
+	if got != want {
+		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
 }
 
@@ -127,14 +133,12 @@ func TestFormatDeltaResults_NoGoals(t *testing.T) {
 	prev := &ProofView{
 		Goals: []ProofGoal{{Goal: "True"}},
 	}
-	cur := &ProofView{
-		Goals: nil,
-	}
+	cur := &ProofView{}
 	result := formatDeltaResults(prev, cur, nil)
-	text := resultText(result)
-
-	if !strings.Contains(text, "No goals or diagnostics.") {
-		t.Errorf("expected no goals message, got:\n%s", text)
+	got := resultText(result)
+	want := "No goals or diagnostics."
+	if got != want {
+		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
 }
 
@@ -149,13 +153,13 @@ func TestFormatDeltaResults_WithDiagnostics(t *testing.T) {
 			},
 		},
 	})
-	text := resultText(result)
-
-	if !strings.Contains(text, "[error]") {
-		t.Errorf("expected error diagnostic, got:\n%s", text)
-	}
-	if !strings.Contains(text, "type error") {
-		t.Errorf("expected diagnostic message, got:\n%s", text)
+	got := resultText(result)
+	want := `
+=== Diagnostics ===
+[error] line 6:0–6:10: type error
+`
+	if got != want {
+		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
 }
 
@@ -167,17 +171,21 @@ func TestFormatFullResults(t *testing.T) {
 		},
 	}
 	result := formatFullResults(pv, nil)
-	text := resultText(result)
+	got := resultText(result)
+	want := `=== Proof Goals: 2 ===
+Goal 1 (1):
+  H : True
+  ────────────────────
+  A
 
-	// Full results should show all hypotheses for all goals.
-	if !strings.Contains(text, "Goal 1") {
-		t.Errorf("expected Goal 1, got:\n%s", text)
-	}
-	if !strings.Contains(text, "Goal 2") {
-		t.Errorf("expected Goal 2, got:\n%s", text)
-	}
-	if !strings.Contains(text, "n : nat") {
-		t.Errorf("expected hypothesis in goal 2, got:\n%s", text)
+Goal 2 (2):
+  H : True
+  n : nat
+  ────────────────────
+  B
+`
+	if got != want {
+		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
 }
 
@@ -190,22 +198,13 @@ func TestWriteHypothesesDiff_MixedChanges(t *testing.T) {
 		Hypotheses: []string{"a : nat", "b : nat", "H' : b = a"},
 	}
 	writeHypothesesDiff(&sb, prev, cur)
-	text := sb.String()
-
-	if !strings.Contains(text, "- H : a = b") {
-		t.Errorf("expected removed H, got:\n%s", text)
-	}
-	if !strings.Contains(text, "+ H' : b = a") {
-		t.Errorf("expected added H', got:\n%s", text)
-	}
-	// Unchanged ones should not be marked.
-	lines := strings.Split(text, "\n")
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "a : nat" || trimmed == "b : nat" {
-			if strings.HasPrefix(strings.TrimSpace(line), "+") || strings.HasPrefix(strings.TrimSpace(line), "-") {
-				t.Errorf("unchanged hypothesis should not be marked:\n%s", text)
-			}
-		}
+	got := sb.String()
+	want := `  - H : a = b
+  a : nat
+  b : nat
+  + H' : b = a
+`
+	if got != want {
+		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
 }
