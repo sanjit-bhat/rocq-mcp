@@ -29,10 +29,19 @@
 - [x] Integration test: file with error returns diagnostics
 - [x] End-to-end test: talk MCP over stdio, call tools, verify results
 
-## Phase 5: Query Tools (Tier 2)
+## Phase 5: Proof View Deltas
+- [ ] Track previous ProofView per document in docState
+- [ ] Diff current vs previous ProofView in formatResults
+- [ ] Default: return only focused goal (goal 1) with full detail
+- [ ] Default: return deltas (new/removed hypotheses, changed conclusion)
+- [ ] Summarize non-focused goals as count + conclusions only
+- [ ] rocq_get_proof_state tool: return full proof state on demand
+- [ ] Tests: verify delta output, verify full state tool
+
+## Phase 6: Query Tools (Tier 2)
 - [ ] rocq_about / rocq_check_type / rocq_locate / rocq_print / rocq_search
 
-## Phase 6: Diagnostics & State (Tier 3)
+## Phase 7: Diagnostics & State (Tier 3)
 - [ ] rocq_reset / rocq_document_state / rocq_document_proofs
 
 ## MVP milestone: Phase 1–4 complete, can interactively prove a .v file via MCP.
