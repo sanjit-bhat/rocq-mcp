@@ -179,6 +179,7 @@ func collectResults(doc *docState) (*mcp.CallToolResult, any, error) {
 	gotProofView := false
 	gotDiags := false
 
+loop:
 	for !gotProofView || !gotDiags {
 		select {
 		case pv = <-doc.proofViewCh:
@@ -187,7 +188,7 @@ func collectResults(doc *docState) (*mcp.CallToolResult, any, error) {
 			gotDiags = true
 		case <-timer.C:
 			// Use whatever we have so far.
-			goto done
+			break loop
 		}
 		// After getting the first notification, give a short window for the second.
 		if !timer.Stop() {
@@ -199,7 +200,6 @@ func collectResults(doc *docState) (*mcp.CallToolResult, any, error) {
 		timer.Reset(500 * time.Millisecond)
 	}
 
-done:
 	result := formatDeltaResults(doc.PrevProofView, pv, diags)
 	doc.PrevProofView = pv
 	if pv != nil {
