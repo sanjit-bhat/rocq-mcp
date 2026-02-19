@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -98,14 +99,14 @@ func diffText(old, new string) string {
 
 	oldFile, err := os.CreateTemp("", "rocq-diff-old-*")
 	if err != nil {
-		return fallbackDiff(new)
+		log.Fatalf("diffText: create temp file: %v", err)
 	}
 	defer os.Remove(oldFile.Name())
 
 	newFile, err := os.CreateTemp("", "rocq-diff-new-*")
 	if err != nil {
 		oldFile.Close()
-		return fallbackDiff(new)
+		log.Fatalf("diffText: create temp file: %v", err)
 	}
 	defer os.Remove(newFile.Name())
 
@@ -118,8 +119,7 @@ func diffText(old, new string) string {
 	out, _ := cmd.Output()
 	// git diff exits 1 when files differ, so ignore exit error.
 	if len(out) == 0 {
-		// Shouldn't happen since old != new, but handle gracefully.
-		return fallbackDiff(new)
+		log.Fatal("diffText: git diff produced no output for differing inputs")
 	}
 
 	return parseDiffHunks(string(out))
@@ -128,7 +128,7 @@ func diffText(old, new string) string {
 // parseDiffHunks extracts just the @@ hunk headers and +/- lines from git diff output.
 func parseDiffHunks(raw string) string {
 	var sb strings.Builder
-	for _, line := range strings.Split(raw, "\n") {
+	for line := range strings.SplitSeq(raw, "\n") {
 		if strings.HasPrefix(line, "@@") || strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-") {
 			// Skip file headers (--- a/..., +++ b/...).
 			if strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") {
@@ -137,16 +137,6 @@ func parseDiffHunks(raw string) string {
 			sb.WriteString(line)
 			sb.WriteString("\n")
 		}
-	}
-	return sb.String()
-}
-
-// fallbackDiff returns the new text prefixed with + on each line.
-// Used when git diff is unavailable.
-func fallbackDiff(text string) string {
-	var sb strings.Builder
-	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
-		fmt.Fprintf(&sb, "+%s\n", line)
 	}
 	return sb.String()
 }
