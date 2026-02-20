@@ -99,7 +99,7 @@ func TestOpenAndCheckError(t *testing.T) {
 				}
 			}
 		case pv := <-doc.proofViewCh:
-			t.Logf("proofView: %d goals", pv.GoalCount)
+			t.Logf("proofView: %d goals", len(pv.Goals))
 		case <-deadline:
 			t.Fatal("timed out waiting for error diagnostics")
 		}
@@ -276,7 +276,8 @@ func TestComplexGoalFlow(t *testing.T) {
   (A /\ B) /\ C
 `)
 
-	// Step 1: assert — two goals, showing first.
+	// Step 1: assert — two goals, showing both.
+	// Goal 2 already has HAB because assert adds the hypothesis to the continuation goal.
 	check("step 1 (assert)", step(), `Goal 1 of 2:
   A, B, C : Prop
   HA : A
@@ -285,13 +286,24 @@ func TestComplexGoalFlow(t *testing.T) {
   ────────────────────
   A /\ B
 
-2 goals remaining
+Goal 2 of 2:
+  A, B, C : Prop
+  HA : A
+  HB : B
+  HC : C
+  HAB : A /\ B
+  ────────────────────
+  (A /\ B) /\ C
 `)
 
-	// Step 2: { — enters focus block, same goal text.
+	// Step 2: { — enters focus block (2 goals → 1 goal, so full display).
 	check("step 2 ({)", step(), `Goal:
-
-No changes to proof state.
+  A, B, C : Prop
+  HA : A
+  HB : B
+  HC : C
+  ────────────────────
+  A /\ B
 `)
 
 	// Step 3: split — splits A /\ B into A and B.
@@ -303,13 +315,23 @@ No changes to proof state.
   ────────────────────
   A
 
-2 goals remaining
+Goal 2 of 2:
+  A, B, C : Prop
+  HA : A
+  HB : B
+  HC : C
+  ────────────────────
+  B
 `)
 
-	// Step 4: - — bullet focuses first sub-goal, no text change.
+	// Step 4: - — bullet focuses first sub-goal (was 2 goals, now 1 → full).
 	check("step 4 (-)", step(), `Goal:
-
-No changes to proof state.
+  A, B, C : Prop
+  HA : A
+  HB : B
+  HC : C
+  ────────────────────
+  A
 `)
 
 	// Step 5: exact HA — solves A, unfocused goals remain.
@@ -351,7 +373,14 @@ No changes to proof state.
   ────────────────────
   A /\ B
 
-2 goals remaining
+Goal 2 of 2:
+  A, B, C : Prop
+  HA : A
+  HB : B
+  HC : C
+  HAB : A /\ B
+  ────────────────────
+  C
 `)
 
 	// Step 10: - — bullet, no text change.

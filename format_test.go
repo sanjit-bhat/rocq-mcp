@@ -7,9 +7,7 @@ import (
 func TestFormatDeltaResults_NoPrevious(t *testing.T) {
 	prev := &ProofView{} // zero-value, as initialized in openDoc
 	pv := &ProofView{
-		GoalCount: 1,
-		GoalID:    "1",
-		GoalText:  "  n : nat\n  ────────────────────\n  0 + n = n\n",
+		Goals: []Goal{{ID: "1", Text: "  n : nat\n  ────────────────────\n  0 + n = n\n"}},
 	}
 	got := resultText(formatDeltaResults(prev, pv, nil))
 	want := `Goal:
@@ -24,21 +22,22 @@ func TestFormatDeltaResults_NoPrevious(t *testing.T) {
 
 func TestFormatDeltaResults_GoalCountDelta(t *testing.T) {
 	prev := &ProofView{
-		GoalCount: 1,
-		GoalID:    "1",
-		GoalText:  "  ────────────────────\n  A /\\ B\n",
+		Goals: []Goal{{ID: "1", Text: "  ────────────────────\n  A /\\ B\n"}},
 	}
 	cur := &ProofView{
-		GoalCount: 2,
-		GoalID:    "2",
-		GoalText:  "  ────────────────────\n  A\n",
+		Goals: []Goal{
+			{ID: "2", Text: "  ────────────────────\n  A\n"},
+			{ID: "3", Text: "  ────────────────────\n  B\n"},
+		},
 	}
 	got := resultText(formatDeltaResults(prev, cur, nil))
 	want := `Goal 1 of 2:
   ────────────────────
   A
 
-2 goals remaining
+Goal 2 of 2:
+  ────────────────────
+  B
 `
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
@@ -47,11 +46,9 @@ func TestFormatDeltaResults_GoalCountDelta(t *testing.T) {
 
 func TestFormatDeltaResults_ProofComplete(t *testing.T) {
 	prev := &ProofView{
-		GoalCount: 1,
-		GoalID:    "1",
-		GoalText:  "  ────────────────────\n  True\n",
+		Goals: []Goal{{ID: "1", Text: "  ────────────────────\n  True\n"}},
 	}
-	cur := &ProofView{} // GoalCount=0, UnfocusedCount=0
+	cur := &ProofView{} // Goals empty, UnfocusedCount=0
 	got := resultText(formatDeltaResults(prev, cur, nil))
 	want := "Proof complete!\n"
 	if got != want {
@@ -61,12 +58,9 @@ func TestFormatDeltaResults_ProofComplete(t *testing.T) {
 
 func TestFormatDeltaResults_SubGoalComplete(t *testing.T) {
 	prev := &ProofView{
-		GoalCount: 1,
-		GoalID:    "1",
-		GoalText:  "  ────────────────────\n  A\n",
+		Goals: []Goal{{ID: "1", Text: "  ────────────────────\n  A\n"}},
 	}
 	cur := &ProofView{
-		GoalCount:      0,
 		UnfocusedCount: 3,
 	}
 	got := resultText(formatDeltaResults(prev, cur, nil))
@@ -98,9 +92,7 @@ func TestFormatDeltaResults_WithDiagnostics(t *testing.T) {
 
 func TestFormatDeltaResults_NoChanges(t *testing.T) {
 	pv := &ProofView{
-		GoalCount: 1,
-		GoalID:    "1",
-		GoalText:  "  n : nat\n  ────────────────────\n  P\n",
+		Goals: []Goal{{ID: "1", Text: "  n : nat\n  ────────────────────\n  P\n"}},
 	}
 	got := resultText(formatDeltaResults(pv, pv, nil))
 	want := `Goal:
@@ -114,9 +106,10 @@ No changes to proof state.
 
 func TestFormatFullResults(t *testing.T) {
 	pv := &ProofView{
-		GoalCount: 2,
-		GoalID:    "1",
-		GoalText:  "  H : True\n  ────────────────────\n  A\n",
+		Goals: []Goal{
+			{ID: "1", Text: "  H : True\n  ────────────────────\n  A\n"},
+			{ID: "2", Text: "  H : True\n  ────────────────────\n  B\n"},
+		},
 	}
 	got := resultText(formatFullResults(pv, nil))
 	want := `Goal 1 of 2:
@@ -124,7 +117,10 @@ func TestFormatFullResults(t *testing.T) {
   ────────────────────
   A
 
-2 goals remaining
+Goal 2 of 2:
+  H : True
+  ────────────────────
+  B
 `
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
@@ -132,7 +128,7 @@ func TestFormatFullResults(t *testing.T) {
 }
 
 func TestFormatFullResults_ProofComplete(t *testing.T) {
-	pv := &ProofView{} // GoalCount=0, UnfocusedCount=0
+	pv := &ProofView{} // Goals empty, UnfocusedCount=0
 	got := resultText(formatFullResults(pv, nil))
 	want := "Proof complete!\n"
 	if got != want {
@@ -183,14 +179,13 @@ index 1234..5678 100644
 
 func TestFormatDeltaResults_NewFocusedGoal(t *testing.T) {
 	prev := &ProofView{
-		GoalCount: 2,
-		GoalID:    "1",
-		GoalText:  "  H : True\n  ────────────────────\n  A\n",
+		Goals: []Goal{
+			{ID: "1", Text: "  H : True\n  ────────────────────\n  A\n"},
+			{ID: "2", Text: "  H : True\n  ────────────────────\n  B\n"},
+		},
 	}
 	cur := &ProofView{
-		GoalCount: 1,
-		GoalID:    "2",
-		GoalText:  "  H : True\n  ────────────────────\n  B\n",
+		Goals: []Goal{{ID: "2", Text: "  H : True\n  ────────────────────\n  B\n"}},
 	}
 	got := resultText(formatDeltaResults(prev, cur, nil))
 	want := `Goal:

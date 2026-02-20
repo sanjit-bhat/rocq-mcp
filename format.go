@@ -27,13 +27,15 @@ func renderGoalText(hyps []string, conclusion string) string {
 
 // formatDeltaResults formats proof state as a delta against the previous proof view.
 // prev is always non-nil (initialized to zero-value in openDoc).
-// Same GoalID → show diff. Different GoalID or no previous goals → show full context.
+// Same single goal ID → show diff. Otherwise show all goals in full.
 func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
 	var sb strings.Builder
 
 	if pv != nil {
+		goalCount := len(pv.Goals)
+
 		// No focused goals.
-		if pv.GoalCount == 0 {
+		if goalCount == 0 {
 			if pv.UnfocusedCount == 0 {
 				sb.WriteString("Proof complete!\n")
 			} else {
@@ -41,12 +43,12 @@ func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp
 			}
 		}
 
-		// Show focused goal.
-		if pv.GoalCount > 0 {
-			writeGoalHeader(&sb, pv)
-			if prev.GoalCount > 0 && prev.GoalID == pv.GoalID {
-				// Same goal — diff.
-				d := diffText(prev.GoalText, pv.GoalText)
+		// Show focused goals.
+		if goalCount > 0 {
+			canDiff := len(prev.Goals) == 1 && goalCount == 1 && prev.Goals[0].ID == pv.Goals[0].ID
+			if canDiff {
+				sb.WriteString("Goal:\n")
+				d := diffText(prev.Goals[0].Text, pv.Goals[0].Text)
 				if d == "" {
 					sb.WriteString("\nNo changes to proof state.\n")
 				} else {
@@ -54,11 +56,7 @@ func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp
 					sb.WriteString(d)
 				}
 			} else {
-				// New/different goal — full context.
-				sb.WriteString(pv.GoalText)
-			}
-			if pv.GoalCount > 1 {
-				fmt.Fprintf(&sb, "\n%d goals remaining\n", pv.GoalCount)
+				writeGoals(&sb, pv.Goals)
 			}
 		}
 	}
@@ -131,12 +129,20 @@ func parseDiffHunks(raw string) string {
 	return sb.String()
 }
 
-// writeGoalHeader writes "Goal:" or "Goal 1 of N:" depending on focused goal count.
-func writeGoalHeader(sb *strings.Builder, pv *ProofView) {
-	if pv.GoalCount > 1 {
-		fmt.Fprintf(sb, "Goal 1 of %d:\n", pv.GoalCount)
-	} else {
+// writeGoals writes all focused goals to the string builder.
+// Single goal: "Goal:\n<text>". Multiple goals: "Goal 1 of N:\n<text>\n\nGoal 2 of N:\n<text>".
+func writeGoals(sb *strings.Builder, goals []Goal) {
+	if len(goals) == 1 {
 		sb.WriteString("Goal:\n")
+		sb.WriteString(goals[0].Text)
+		return
+	}
+	for i, g := range goals {
+		if i > 0 {
+			sb.WriteString("\n")
+		}
+		fmt.Fprintf(sb, "Goal %d of %d:\n", i+1, len(goals))
+		sb.WriteString(g.Text)
 	}
 }
 
@@ -145,16 +151,12 @@ func formatFullResults(pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
 	var sb strings.Builder
 
 	if pv != nil {
-		if pv.GoalCount == 0 && pv.UnfocusedCount == 0 {
+		if len(pv.Goals) == 0 && pv.UnfocusedCount == 0 {
 			sb.WriteString("Proof complete!\n")
 		}
 
-		if pv.GoalCount > 0 {
-			writeGoalHeader(&sb, pv)
-			sb.WriteString(pv.GoalText)
-			if pv.GoalCount > 1 {
-				fmt.Fprintf(&sb, "\n%d goals remaining\n", pv.GoalCount)
-			}
+		if len(pv.Goals) > 0 {
+			writeGoals(&sb, pv.Goals)
 		}
 	}
 
@@ -201,7 +203,7 @@ func formatDiagnostics(sb *strings.Builder, diags []Diagnostic) {
 
 // parseProofView parses the vsrocq proofView notification params.
 // vsrocq uses Ppcmd (pretty-printer command) trees for goals and hypotheses.
-// The focused goal (Goals[0]) is pre-rendered to text; only GoalCount is kept for the rest.
+// All focused goals are pre-rendered to text.
 func parseProofView(params json.RawMessage) *ProofView {
 	var raw struct {
 		Proof struct {
@@ -218,20 +220,18 @@ func parseProofView(params json.RawMessage) *ProofView {
 	}
 
 	pv := &ProofView{
-		GoalCount:      len(raw.Proof.Goals),
 		UnfocusedCount: len(raw.Proof.UnfocusedGoals) + len(raw.Proof.ShelvedGoals) + len(raw.Proof.GivenUpGoals),
 	}
 
-	// Pre-render only the focused goal (Goals[0]).
-	if len(raw.Proof.Goals) > 0 {
-		g := raw.Proof.Goals[0]
-		pv.GoalID = strings.TrimSpace(string(g.ID))
+	// Pre-render all focused goals.
+	for _, g := range raw.Proof.Goals {
+		id := strings.TrimSpace(string(g.ID))
 		conclusion := renderPpcmd(g.Goal)
 		var hyps []string
 		for _, h := range g.Hypotheses {
 			hyps = append(hyps, renderPpcmd(h))
 		}
-		pv.GoalText = renderGoalText(hyps, conclusion)
+		pv.Goals = append(pv.Goals, Goal{ID: id, Text: renderGoalText(hyps, conclusion)})
 	}
 
 	for _, m := range raw.Messages {

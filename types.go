@@ -2,13 +2,16 @@ package main
 
 // types.go — shared domain types for proof goals, diagnostics, and LSP positions.
 
-// ProofView stores the focused goal as pre-rendered text, plus metadata.
-// Only the first focused goal (Goals[0]) is kept; GoalCount tracks the total.
+// Goal represents a single focused goal with its ID and pre-rendered text.
+type Goal struct {
+	ID   string
+	Text string // pre-rendered: hypotheses + separator + conclusion
+}
+
+// ProofView stores all focused goals as pre-rendered text, plus metadata.
 type ProofView struct {
-	GoalCount      int      // total number of focused goals
 	UnfocusedCount int      // total number of unfocused goals (in focus blocks, shelved, etc.)
-	GoalID         string   // ID of the focused goal
-	GoalText       string   // pre-rendered: hypotheses + separator + conclusion
+	Goals          []Goal   // all focused goals, pre-rendered
 	Messages       []string // prover messages
 }
 
