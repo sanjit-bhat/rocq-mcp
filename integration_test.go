@@ -227,16 +227,16 @@ func TestQuerySearch(t *testing.T) {
 	}
 }
 
-func TestSplitGoals(t *testing.T) {
+func TestComplexGoalFlow(t *testing.T) {
 	sm := newStateManager(nil)
 	defer sm.shutdown()
 
-	path, _ := filepath.Abs("testdata/split_goals.v")
+	path, _ := filepath.Abs("testdata/complex_goal_flow.v")
 	if err := sm.openDoc(path); err != nil {
 		t.Fatalf("openDoc: %v", err)
 	}
 
-	// Line 0: Theorem complex_flow : forall (A B C : Prop),
+	// Line 0: Theorem complex_goal_flow : forall (A B C : Prop),
 	// Line 1:   A -> B -> C -> (A /\ B) /\ C.
 	// Line 2: Proof.
 	// Line 3:   intros A B C HA HB HC.
