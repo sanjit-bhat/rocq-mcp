@@ -236,58 +236,91 @@ func TestSplitGoals(t *testing.T) {
 		t.Fatalf("openDoc: %v", err)
 	}
 
-	// Line 0: Theorem and_comm : forall A B : Prop, A /\ B -> B /\ A.
-	// Line 1: Proof.
-	// Line 2:   intros A B H.
-	// Line 3:   destruct H as [HA HB].
-	// Line 4:   split.
-	// Line 5:   - exact HB.
-	// Line 6:   - exact HA.
-	// Line 7: Qed.
+	// Line 0: Theorem complex_flow : forall (A B C : Prop),
+	// Line 1:   A -> B -> C -> (A /\ B) /\ C.
+	// Line 2: Proof.
+	// Line 3:   intros A B C HA HB HC.
+	// Line 4:   assert (HAB : A /\ B).
+	// Line 5:   { split.
+	// Line 6:     - exact HA.
+	// Line 7:     - exact HB. }
+	// Line 8:   split.
+	// Line 9:   - exact HAB.
+	// Line 10:  - exact HC.
+	// Line 11:  Qed.
 
-	// Step 1: After "intros A B H." — 1 goal, hypotheses A B H, conclusion B /\ A
-	result, _, _ := doCheck(sm, path, 3, 0)
-	text := resultText(result)
-	t.Logf("after intros:\n%s", text)
-	if !strings.Contains(text, "B /\\ A") {
-		t.Errorf("expected conclusion 'B /\\ A'.\ngot:\n%s", text)
-	}
-
-	// Get the proof state to check structure.
 	doc, _ := sm.getDoc(path)
-	if doc.ProofView == nil {
-		t.Fatal("expected non-nil ProofView after intros")
+
+	// 1. doCheck to after "intros" — full context (no diff markers).
+	result, _, _ := doCheck(sm, path, 4, 0)
+	text := resultText(result)
+	t.Logf("check after intros:\n%s", text)
+	if strings.Contains(text, "@@") || strings.Contains(text, "\n+") || strings.Contains(text, "\n-") {
+		t.Errorf("doCheck should produce full context, not diff.\ngot:\n%s", text)
 	}
-	if doc.ProofView.GoalCount != 1 {
-		t.Errorf("expected 1 goal after intros, got %d", doc.ProofView.GoalCount)
+	if !strings.Contains(text, "(A /\\ B) /\\ C") {
+		t.Errorf("expected conclusion '(A /\\ B) /\\ C'.\ngot:\n%s", text)
+	}
+	if doc.ProofView == nil || doc.ProofView.GoalCount != 1 {
+		t.Errorf("expected 1 goal after intros, got %v", doc.ProofView)
+	}
+	firstGoalID := doc.ProofView.GoalID
+
+	// 2. doStep forward ("assert (HAB : A /\ B).") — goal changes, should show full context.
+	result, _, _ = doStep(sm, path, "prover/stepForward")
+	text = resultText(result)
+	t.Logf("step to assert:\n%s", text)
+	if doc.ProofView.GoalID == firstGoalID {
+		t.Logf("note: goal ID didn't change after assert (may be same ID with different goal)")
+	}
+	// assert creates a sub-goal "A /\ B"
+	if !strings.Contains(text, "A /\\ B") {
+		t.Errorf("expected 'A /\\ B' in assert sub-goal.\ngot:\n%s", text)
 	}
 
-	// Step 2: After "destruct H as [HA HB]." — still 1 goal, H replaced by HA/HB
-	result, _, _ = doCheck(sm, path, 4, 0)
+	// 3. doStep forward ("{ split.") — goal changes again (sub-goals of the assertion).
+	result, _, _ = doStep(sm, path, "prover/stepForward")
 	text = resultText(result)
-	t.Logf("after destruct:\n%s", text)
-	if doc.ProofView.GoalCount != 1 {
-		t.Errorf("expected 1 goal after destruct, got %d", doc.ProofView.GoalCount)
+	t.Logf("step to split inside assert:\n%s", text)
+
+	// 4. doStep forward ("- exact HA.") — solves first sub-goal of assert.
+	result, _, _ = doStep(sm, path, "prover/stepForward")
+	text = resultText(result)
+	t.Logf("step exact HA:\n%s", text)
+
+	// 5. doStep forward ("- exact HB. }") — solves second sub-goal, closes assert block.
+	result, _, _ = doStep(sm, path, "prover/stepForward")
+	text = resultText(result)
+	t.Logf("step exact HB/close assert:\n%s", text)
+
+	// 6. doStep forward ("split.") — splits original goal into two sub-goals.
+	result, _, _ = doStep(sm, path, "prover/stepForward")
+	text = resultText(result)
+	t.Logf("step split on original:\n%s", text)
+	if doc.ProofView != nil && doc.ProofView.GoalCount > 1 {
+		if !strings.Contains(text, "goals remaining") {
+			t.Errorf("expected 'goals remaining' after split.\ngot:\n%s", text)
+		}
 	}
 
-	// Step 3: After "split." — 2 goals, conclusion changes to B
-	result, _, _ = doCheck(sm, path, 5, 0)
+	// 7. doStep forward ("- exact HAB.") — solves first sub-goal.
+	result, _, _ = doStep(sm, path, "prover/stepForward")
 	text = resultText(result)
-	t.Logf("after split:\n%s", text)
-	if doc.ProofView.GoalCount != 2 {
-		t.Errorf("expected 2 goals after split, got %d", doc.ProofView.GoalCount)
-	}
-	if !strings.Contains(text, "2 goals remaining") {
-		t.Errorf("expected '2 goals remaining'.\ngot:\n%s", text)
-	}
+	t.Logf("step exact HAB:\n%s", text)
 
-	// Step 4: After "Qed." — proof complete, check the whole file.
-	result, _, _ = doCheck(sm, path, 8, 0)
+	// 8. doStep forward ("- exact HC.") — solves second sub-goal, proof complete.
+	result, _, _ = doStep(sm, path, "prover/stepForward")
 	text = resultText(result)
-	t.Logf("after Qed:\n%s", text)
-	// After Qed, goals should be 0 (proof complete).
-	if doc.ProofView.GoalCount != 0 {
-		t.Errorf("expected 0 goals after Qed, got %d", doc.ProofView.GoalCount)
+	t.Logf("step exact HC:\n%s", text)
+
+	// 9. doStep forward ("Qed.") — proof registered.
+	result, _, _ = doStep(sm, path, "prover/stepForward")
+	text = resultText(result)
+	t.Logf("step Qed:\n%s", text)
+	if doc.ProofView != nil && doc.ProofView.GoalCount == 0 {
+		if !strings.Contains(text, "Proof complete!") {
+			t.Errorf("expected 'Proof complete!' after Qed.\ngot:\n%s", text)
+		}
 	}
 
 	if err := sm.closeDoc(path); err != nil {

@@ -1,8 +1,12 @@
-Theorem and_comm : forall A B : Prop, A /\ B -> B /\ A.
+Theorem complex_flow : forall (A B C : Prop),
+  A -> B -> C -> (A /\ B) /\ C.
 Proof.
-  intros A B H.
-  destruct H as [HA HB].
+  intros A B C HA HB HC.
+  assert (HAB : A /\ B).
+  { split.
+    - exact HA.
+    - exact HB. }
   split.
-  - exact HB.
-  - exact HA.
+  - exact HAB.
+  - exact HC.
 Qed.

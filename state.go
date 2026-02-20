@@ -105,11 +105,12 @@ func (sm *stateManager) openDoc(path string) error {
 	}
 
 	doc := &docState{
-		URI:          uri,
-		Version:      1,
-		Content:      string(content),
-		proofViewCh:  make(chan *ProofView, 16),
-		diagnosticCh: make(chan []Diagnostic, 16),
+		URI:           uri,
+		Version:       1,
+		Content:       string(content),
+		PrevProofView: &ProofView{}, // zero-value so formatDeltaResults always has non-nil prev
+		proofViewCh:   make(chan *ProofView, 16),
+		diagnosticCh:  make(chan []Diagnostic, 16),
 	}
 	sm.docs[uri] = doc
 

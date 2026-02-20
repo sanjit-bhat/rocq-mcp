@@ -17,6 +17,14 @@ so an agent can open `.v` files, step through proofs, inspect goals, and fix err
 | `rocq_step_backward` | Step backward one sentence |
 | `rocq_get_proof_state` | Get the full proof state (all goals and hypotheses) |
 
+## Output format
+
+Step operations (`rocq_step_forward`, `rocq_step_backward`) show **diffs** when
+the focused goal hasn't changed (e.g., after `rewrite`, `simpl`, `intro`), and
+**full context** when the goal changes (e.g., after `split`, `assert`, solving a
+sub-goal). Check operations (`rocq_check`, `rocq_check_all`) always show full
+context. Use `rocq_get_proof_state` to get the full state at any time.
+
 ## Installation
 
 ### Prerequisites

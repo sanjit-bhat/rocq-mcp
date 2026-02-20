@@ -26,22 +26,21 @@ func renderGoalText(hyps []string, conclusion string) string {
 }
 
 // formatDeltaResults formats proof state as a delta against the previous proof view.
-// When prev is non-nil, diffs GoalText using git diff for a line-level diff.
+// prev is always non-nil (initialized to zero-value in openDoc).
+// Same GoalID → show diff. Different GoalID or no previous goals → show full context.
 func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
 	var sb strings.Builder
 
-	if pv != nil && pv.GoalCount > 0 {
-		// Render header with goal ID.
-		if prev != nil && prev.GoalCount > 0 && prev.GoalID != pv.GoalID {
-			sb.WriteString("New focused goal:\n")
-		}
-		fmt.Fprintf(&sb, "Goal 1 (%s):\n", pv.GoalID)
+	// Handle proof completion.
+	if pv != nil && pv.GoalCount == 0 {
+		sb.WriteString("Proof complete!\n")
+	}
 
-		if prev == nil || prev.GoalCount == 0 {
-			// No previous state — show full goal text.
-			sb.WriteString(pv.GoalText)
-		} else {
-			// Diff previous vs current goal text.
+	// Show goal: full if goal changed, diff if same.
+	if pv != nil && pv.GoalCount > 0 {
+		fmt.Fprintf(&sb, "Goal 1 (%s):\n", pv.GoalID)
+		if prev.GoalCount > 0 && prev.GoalID == pv.GoalID {
+			// Same goal — diff.
 			d := diffText(prev.GoalText, pv.GoalText)
 			if d == "" {
 				sb.WriteString("\nNo changes to proof state.\n")
@@ -49,8 +48,10 @@ func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp
 				sb.WriteString("\n")
 				sb.WriteString(d)
 			}
+		} else {
+			// New/different goal — full context.
+			sb.WriteString(pv.GoalText)
 		}
-
 		if pv.GoalCount > 1 {
 			fmt.Fprintf(&sb, "\n%d goals remaining\n", pv.GoalCount)
 		}

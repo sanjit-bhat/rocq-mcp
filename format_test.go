@@ -6,12 +6,13 @@ import (
 )
 
 func TestFormatDeltaResults_NoPrevious(t *testing.T) {
+	prev := &ProofView{} // zero-value, as initialized in openDoc
 	pv := &ProofView{
 		GoalCount: 1,
 		GoalID:    "1",
 		GoalText:  "  n : nat\n  ────────────────────\n  0 + n = n\n",
 	}
-	result := formatDeltaResults(nil, pv, nil)
+	result := formatDeltaResults(prev, pv, nil)
 	got := resultText(result)
 	want := "Goal 1 (1):\n  n : nat\n  ────────────────────\n  0 + n = n\n"
 	if got != want {
@@ -32,8 +33,9 @@ func TestFormatDeltaResults_GoalCountDelta(t *testing.T) {
 	}
 	result := formatDeltaResults(prev, cur, nil)
 	got := resultText(result)
-	if !strings.Contains(got, "New focused goal:") {
-		t.Errorf("expected new focused goal note.\ngot:\n%s", got)
+	// Different GoalID → full context (no diff markers).
+	if !strings.Contains(got, "  A\n") {
+		t.Errorf("expected full goal text.\ngot:\n%s", got)
 	}
 	if !strings.Contains(got, "2 goals remaining") {
 		t.Errorf("expected 2 goals remaining.\ngot:\n%s", got)
@@ -49,14 +51,14 @@ func TestFormatDeltaResults_NoGoals(t *testing.T) {
 	cur := &ProofView{}
 	result := formatDeltaResults(prev, cur, nil)
 	got := resultText(result)
-	want := "No goals or diagnostics."
+	want := "Proof complete!\n"
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
 }
 
 func TestFormatDeltaResults_WithDiagnostics(t *testing.T) {
-	result := formatDeltaResults(nil, nil, []Diagnostic{
+	result := formatDeltaResults(&ProofView{}, nil, []Diagnostic{
 		{
 			Severity: 1,
 			Message:  "type error",
@@ -153,10 +155,11 @@ func TestFormatDeltaResults_NewFocusedGoal(t *testing.T) {
 	}
 	result := formatDeltaResults(prev, cur, nil)
 	got := resultText(result)
-	if !strings.Contains(got, "New focused goal:") {
-		t.Errorf("expected 'New focused goal:' annotation.\ngot:\n%s", got)
-	}
+	// Different GoalID → full context shown (no diff markers).
 	if !strings.Contains(got, "Goal 1 (2):") {
 		t.Errorf("expected goal header with new ID.\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "  B\n") {
+		t.Errorf("expected full goal text for new goal.\ngot:\n%s", got)
 	}
 }

@@ -33,7 +33,7 @@ func doCheck(sm *stateManager, file string, line, col int) (*mcp.CallToolResult,
 		return errResult(err), nil, nil
 	}
 
-	return collectResults(doc)
+	return collectResultsFull(doc)
 }
 
 // doCheckAll sends interpretToEnd and waits for results.
@@ -54,7 +54,7 @@ func doCheckAll(sm *stateManager, file string) (*mcp.CallToolResult, any, error)
 		return errResult(err), nil, nil
 	}
 
-	return collectResults(doc)
+	return collectResultsFull(doc)
 }
 
 // doStep sends stepForward or stepBackward and waits for results.
@@ -75,22 +75,20 @@ func doStep(sm *stateManager, file string, method string) (*mcp.CallToolResult, 
 		return errResult(err), nil, nil
 	}
 
-	return collectResults(doc)
+	return collectResultsDelta(doc)
 }
 
-// collectResults waits for proofView and diagnostics notifications.
-func collectResults(doc *docState) (*mcp.CallToolResult, any, error) {
+// waitNotifications waits for proofView and diagnostics notifications from vsrocq.
+func waitNotifications(doc *docState) (*ProofView, []Diagnostic) {
 	var pv *ProofView
 	var diags []Diagnostic
 
-	// Wait for at least one notification, then collect any others that arrive quickly.
 	timer := time.NewTimer(notifyTimeout)
 	defer timer.Stop()
 
 	gotProofView := false
 	gotDiags := false
 
-loop:
 	for !gotProofView || !gotDiags {
 		select {
 		case pv = <-doc.proofViewCh:
@@ -98,8 +96,7 @@ loop:
 		case diags = <-doc.diagnosticCh:
 			gotDiags = true
 		case <-timer.C:
-			// Use whatever we have so far.
-			break loop
+			return pv, diags
 		}
 		// After getting the first notification, give a short window for the second.
 		if !timer.Stop() {
@@ -110,7 +107,28 @@ loop:
 		}
 		timer.Reset(500 * time.Millisecond)
 	}
+	return pv, diags
+}
 
+// collectResultsFull waits for notifications and formats with full context (no diffs).
+// Used by doCheck and doCheckAll.
+func collectResultsFull(doc *docState) (*mcp.CallToolResult, any, error) {
+	pv, diags := waitNotifications(doc)
+	result := formatFullResults(pv, diags)
+	doc.PrevProofView = pv
+	if pv != nil {
+		doc.ProofView = pv
+	}
+	if diags != nil {
+		doc.Diagnostics = diags
+	}
+	return result, nil, nil
+}
+
+// collectResultsDelta waits for notifications and formats as delta against previous state.
+// Used by doStep.
+func collectResultsDelta(doc *docState) (*mcp.CallToolResult, any, error) {
+	pv, diags := waitNotifications(doc)
 	result := formatDeltaResults(doc.PrevProofView, pv, diags)
 	doc.PrevProofView = pv
 	if pv != nil {
