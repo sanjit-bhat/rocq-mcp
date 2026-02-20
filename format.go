@@ -31,29 +31,35 @@ func renderGoalText(hyps []string, conclusion string) string {
 func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
 	var sb strings.Builder
 
-	// Handle proof completion.
-	if pv != nil && pv.GoalCount == 0 {
-		sb.WriteString("Proof complete!\n")
-	}
-
-	// Show goal: full if goal changed, diff if same.
-	if pv != nil && pv.GoalCount > 0 {
-		fmt.Fprintf(&sb, "Goal 1 (%s):\n", pv.GoalID)
-		if prev.GoalCount > 0 && prev.GoalID == pv.GoalID {
-			// Same goal — diff.
-			d := diffText(prev.GoalText, pv.GoalText)
-			if d == "" {
-				sb.WriteString("\nNo changes to proof state.\n")
+	if pv != nil {
+		// No focused goals.
+		if pv.GoalCount == 0 {
+			if pv.UnfocusedCount == 0 {
+				sb.WriteString("Proof complete!\n")
 			} else {
-				sb.WriteString("\n")
-				sb.WriteString(d)
+				fmt.Fprintf(&sb, "Sub-goal complete! %d unfocused remaining.\n", pv.UnfocusedCount)
 			}
-		} else {
-			// New/different goal — full context.
-			sb.WriteString(pv.GoalText)
 		}
-		if pv.GoalCount > 1 {
-			fmt.Fprintf(&sb, "\n%d goals remaining\n", pv.GoalCount)
+
+		// Show focused goal.
+		if pv.GoalCount > 0 {
+			writeGoalHeader(&sb, pv)
+			if prev.GoalCount > 0 && prev.GoalID == pv.GoalID {
+				// Same goal — diff.
+				d := diffText(prev.GoalText, pv.GoalText)
+				if d == "" {
+					sb.WriteString("\nNo changes to proof state.\n")
+				} else {
+					sb.WriteString("\n")
+					sb.WriteString(d)
+				}
+			} else {
+				// New/different goal — full context.
+				sb.WriteString(pv.GoalText)
+			}
+			if pv.GoalCount > 1 {
+				fmt.Fprintf(&sb, "\n%d goals remaining\n", pv.GoalCount)
+			}
 		}
 	}
 
@@ -125,15 +131,30 @@ func parseDiffHunks(raw string) string {
 	return sb.String()
 }
 
+// writeGoalHeader writes "Goal:" or "Goal 1 of N:" depending on focused goal count.
+func writeGoalHeader(sb *strings.Builder, pv *ProofView) {
+	if pv.GoalCount > 1 {
+		fmt.Fprintf(sb, "Goal 1 of %d:\n", pv.GoalCount)
+	} else {
+		sb.WriteString("Goal:\n")
+	}
+}
+
 // formatFullResults formats the complete proof state without deltas.
 func formatFullResults(pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
 	var sb strings.Builder
 
-	if pv != nil && pv.GoalCount > 0 {
-		fmt.Fprintf(&sb, "Goal 1 (%s):\n", pv.GoalID)
-		sb.WriteString(pv.GoalText)
-		if pv.GoalCount > 1 {
-			fmt.Fprintf(&sb, "\n%d goals remaining\n", pv.GoalCount)
+	if pv != nil {
+		if pv.GoalCount == 0 && pv.UnfocusedCount == 0 {
+			sb.WriteString("Proof complete!\n")
+		}
+
+		if pv.GoalCount > 0 {
+			writeGoalHeader(&sb, pv)
+			sb.WriteString(pv.GoalText)
+			if pv.GoalCount > 1 {
+				fmt.Fprintf(&sb, "\n%d goals remaining\n", pv.GoalCount)
+			}
 		}
 	}
 
@@ -197,7 +218,8 @@ func parseProofView(params json.RawMessage) *ProofView {
 	}
 
 	pv := &ProofView{
-		GoalCount: len(raw.Proof.Goals),
+		GoalCount:      len(raw.Proof.Goals),
+		UnfocusedCount: len(raw.Proof.UnfocusedGoals) + len(raw.Proof.ShelvedGoals) + len(raw.Proof.GivenUpGoals),
 	}
 
 	// Pre-render only the focused goal (Goals[0]).

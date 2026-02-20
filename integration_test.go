@@ -236,95 +236,129 @@ func TestComplexGoalFlow(t *testing.T) {
 		t.Fatalf("openDoc: %v", err)
 	}
 
-	// Line 0: Theorem complex_goal_flow : forall (A B C : Prop),
-	// Line 1:   A -> B -> C -> (A /\ B) /\ C.
-	// Line 2: Proof.
-	// Line 3:   intros A B C HA HB HC.
-	// Line 4:   assert (HAB : A /\ B).
-	// Line 5:   { split.
-	// Line 6:     - exact HA.
-	// Line 7:     - exact HB. }
-	// Line 8:   split.
-	// Line 9:   - exact HAB.
-	// Line 10:  - exact HC.
-	// Line 11:  Qed.
+	// vsrocq sentence boundaries (each is one stepForward):
+	//   intros A B C HA HB HC.   (checked via doCheck, not stepped)
+	//   assert (HAB : A /\ B).   step 1  — new goal: A /\ B
+	//   {                         step 2  — enters focus block
+	//   split.                    step 3  — splits A /\ B into A, B
+	//   -                         step 4  — bullet focuses first sub-goal
+	//   exact HA.                 step 5  — solves A (sub-goal complete)
+	//   -                         step 6  — bullet focuses B
+	//   exact HB.                 step 7  — solves B (sub-goal complete)
+	//   }                         step 8  — closes focus, original goal returns
+	//   split.                    step 9  — splits (A /\ B) /\ C
+	//   -                         step 10 — bullet
+	//   exact HAB.                step 11 — solves first sub-goal (sub-goal complete)
+	//   -                         step 12 — bullet focuses C
+	//   exact HC.                 step 13 — proof complete
+	//   Qed.                      step 14 — proof registered
 
-	doc, _ := sm.getDoc(path)
+	step := func() string {
+		result, _, _ := doStep(sm, path, "prover/stepForward")
+		return resultText(result)
+	}
 
-	// 1. doCheck to after "intros" — full context (no diff markers).
+	// doCheck after intros: always full context, no diff markers.
 	result, _, _ := doCheck(sm, path, 4, 0)
 	text := resultText(result)
 	t.Logf("check after intros:\n%s", text)
-	if strings.Contains(text, "@@") || strings.Contains(text, "\n+") || strings.Contains(text, "\n-") {
-		t.Errorf("doCheck should produce full context, not diff.\ngot:\n%s", text)
-	}
-	if !strings.Contains(text, "(A /\\ B) /\\ C") {
-		t.Errorf("expected conclusion '(A /\\ B) /\\ C'.\ngot:\n%s", text)
-	}
-	if doc.ProofView == nil || doc.ProofView.GoalCount != 1 {
-		t.Errorf("expected 1 goal after intros, got %v", doc.ProofView)
-	}
-	firstGoalID := doc.ProofView.GoalID
+	assertContains(t, text, "Goal:")
+	assertContains(t, text, "(A /\\ B) /\\ C")
+	assertNotContains(t, text, "@@") // no diff markers
 
-	// 2. doStep forward ("assert (HAB : A /\ B).") — goal changes, should show full context.
-	result, _, _ = doStep(sm, path, "prover/stepForward")
-	text = resultText(result)
-	t.Logf("step to assert:\n%s", text)
-	if doc.ProofView.GoalID == firstGoalID {
-		t.Logf("note: goal ID didn't change after assert (may be same ID with different goal)")
-	}
-	// assert creates a sub-goal "A /\ B"
-	if !strings.Contains(text, "A /\\ B") {
-		t.Errorf("expected 'A /\\ B' in assert sub-goal.\ngot:\n%s", text)
-	}
+	// Step 1: assert — new goal ID, full context shown.
+	text = step()
+	t.Logf("step 1 (assert):\n%s", text)
+	assertContains(t, text, "Goal 1 of 2:")
+	assertContains(t, text, "A /\\ B")
+	assertContains(t, text, "2 goals remaining")
 
-	// 3. doStep forward ("{ split.") — goal changes again (sub-goals of the assertion).
-	result, _, _ = doStep(sm, path, "prover/stepForward")
-	text = resultText(result)
-	t.Logf("step to split inside assert:\n%s", text)
+	// Step 2: { — enters focus block, same goal, no text change.
+	text = step()
+	t.Logf("step 2 ({):\n%s", text)
+	assertContains(t, text, "Goal:")
+	assertContains(t, text, "No changes to proof state.")
 
-	// 4. doStep forward ("- exact HA.") — solves first sub-goal of assert.
-	result, _, _ = doStep(sm, path, "prover/stepForward")
-	text = resultText(result)
-	t.Logf("step exact HA:\n%s", text)
+	// Step 3: split — splits assertion goal into A and B.
+	text = step()
+	t.Logf("step 3 (split):\n%s", text)
+	assertContains(t, text, "Goal 1 of 2:")
+	assertContains(t, text, "A\n") // conclusion is A
 
-	// 5. doStep forward ("- exact HB. }") — solves second sub-goal, closes assert block.
-	result, _, _ = doStep(sm, path, "prover/stepForward")
-	text = resultText(result)
-	t.Logf("step exact HB/close assert:\n%s", text)
+	// Step 4: - — bullet focuses first sub-goal, no text change.
+	text = step()
+	t.Logf("step 4 (-):\n%s", text)
+	assertContains(t, text, "No changes to proof state.")
 
-	// 6. doStep forward ("split.") — splits original goal into two sub-goals.
-	result, _, _ = doStep(sm, path, "prover/stepForward")
-	text = resultText(result)
-	t.Logf("step split on original:\n%s", text)
-	if doc.ProofView != nil && doc.ProofView.GoalCount > 1 {
-		if !strings.Contains(text, "goals remaining") {
-			t.Errorf("expected 'goals remaining' after split.\ngot:\n%s", text)
-		}
-	}
+	// Step 5: exact HA — solves A sub-goal, NOT proof complete.
+	text = step()
+	t.Logf("step 5 (exact HA):\n%s", text)
+	assertContains(t, text, "Sub-goal complete!")
+	assertNotContains(t, text, "Proof complete!")
 
-	// 7. doStep forward ("- exact HAB.") — solves first sub-goal.
-	result, _, _ = doStep(sm, path, "prover/stepForward")
-	text = resultText(result)
-	t.Logf("step exact HAB:\n%s", text)
+	// Step 6: - — bullet focuses B sub-goal.
+	text = step()
+	t.Logf("step 6 (-):\n%s", text)
+	assertContains(t, text, "Goal:")
+	assertContains(t, text, "B\n") // conclusion is B
 
-	// 8. doStep forward ("- exact HC.") — solves second sub-goal, proof complete.
-	result, _, _ = doStep(sm, path, "prover/stepForward")
-	text = resultText(result)
-	t.Logf("step exact HC:\n%s", text)
+	// Step 7: exact HB — solves B sub-goal, NOT proof complete.
+	text = step()
+	t.Logf("step 7 (exact HB):\n%s", text)
+	assertContains(t, text, "Sub-goal complete!")
+	assertNotContains(t, text, "Proof complete!")
 
-	// 9. doStep forward ("Qed.") — proof registered.
-	result, _, _ = doStep(sm, path, "prover/stepForward")
-	text = resultText(result)
-	t.Logf("step Qed:\n%s", text)
-	if doc.ProofView != nil && doc.ProofView.GoalCount == 0 {
-		if !strings.Contains(text, "Proof complete!") {
-			t.Errorf("expected 'Proof complete!' after Qed.\ngot:\n%s", text)
-		}
-	}
+	// Step 8: } — closes focus block, original goal returns with HAB.
+	text = step()
+	t.Logf("step 8 (}):\n%s", text)
+	assertContains(t, text, "Goal:")
+	assertContains(t, text, "HAB : A /\\ B")     // new hypothesis
+	assertContains(t, text, "(A /\\ B) /\\ C\n") // original conclusion
+
+	// Step 9: split — splits original goal.
+	text = step()
+	t.Logf("step 9 (split):\n%s", text)
+	assertContains(t, text, "Goal 1 of 2:")
+	assertContains(t, text, "2 goals remaining")
+
+	// Steps 10-11: bullet + exact HAB.
+	step() // -
+	text = step()
+	t.Logf("step 11 (exact HAB):\n%s", text)
+	assertContains(t, text, "Sub-goal complete!")
+
+	// Step 12: - focuses C sub-goal.
+	text = step()
+	t.Logf("step 12 (-):\n%s", text)
+	assertContains(t, text, "C\n") // conclusion is C
+
+	// Step 13: exact HC — proof complete (no unfocused goals left).
+	text = step()
+	t.Logf("step 13 (exact HC):\n%s", text)
+	assertContains(t, text, "Proof complete!")
+
+	// Step 14: Qed — proof registered.
+	text = step()
+	t.Logf("step 14 (Qed):\n%s", text)
+	assertContains(t, text, "Proof complete!")
+	assertContains(t, text, "complex_goal_flow is defined")
 
 	if err := sm.closeDoc(path); err != nil {
 		t.Fatalf("closeDoc: %v", err)
+	}
+}
+
+func assertContains(t *testing.T, got, want string) {
+	t.Helper()
+	if !strings.Contains(got, want) {
+		t.Errorf("expected output to contain %q.\ngot:\n%s", want, got)
+	}
+}
+
+func assertNotContains(t *testing.T, got, unwanted string) {
+	t.Helper()
+	if strings.Contains(got, unwanted) {
+		t.Errorf("expected output NOT to contain %q.\ngot:\n%s", unwanted, got)
 	}
 }
 

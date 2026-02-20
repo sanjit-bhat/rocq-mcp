@@ -14,7 +14,7 @@ func TestFormatDeltaResults_NoPrevious(t *testing.T) {
 	}
 	result := formatDeltaResults(prev, pv, nil)
 	got := resultText(result)
-	want := "Goal 1 (1):\n  n : nat\n  ────────────────────\n  0 + n = n\n"
+	want := "Goal:\n  n : nat\n  ────────────────────\n  0 + n = n\n"
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
 	}
@@ -34,6 +34,9 @@ func TestFormatDeltaResults_GoalCountDelta(t *testing.T) {
 	result := formatDeltaResults(prev, cur, nil)
 	got := resultText(result)
 	// Different GoalID → full context (no diff markers).
+	if !strings.Contains(got, "Goal 1 of 2:") {
+		t.Errorf("expected 'Goal 1 of 2:' header.\ngot:\n%s", got)
+	}
 	if !strings.Contains(got, "  A\n") {
 		t.Errorf("expected full goal text.\ngot:\n%s", got)
 	}
@@ -42,18 +45,38 @@ func TestFormatDeltaResults_GoalCountDelta(t *testing.T) {
 	}
 }
 
-func TestFormatDeltaResults_NoGoals(t *testing.T) {
+func TestFormatDeltaResults_ProofComplete(t *testing.T) {
 	prev := &ProofView{
 		GoalCount: 1,
 		GoalID:    "1",
 		GoalText:  "  ────────────────────\n  True\n",
 	}
-	cur := &ProofView{}
+	cur := &ProofView{} // GoalCount=0, UnfocusedCount=0
 	result := formatDeltaResults(prev, cur, nil)
 	got := resultText(result)
 	want := "Proof complete!\n"
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}
+
+func TestFormatDeltaResults_SubGoalComplete(t *testing.T) {
+	prev := &ProofView{
+		GoalCount: 1,
+		GoalID:    "1",
+		GoalText:  "  ────────────────────\n  A\n",
+	}
+	cur := &ProofView{
+		GoalCount:      0,
+		UnfocusedCount: 3,
+	}
+	result := formatDeltaResults(prev, cur, nil)
+	got := resultText(result)
+	if !strings.Contains(got, "Sub-goal complete!") {
+		t.Errorf("expected 'Sub-goal complete!'.\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "3 unfocused remaining") {
+		t.Errorf("expected '3 unfocused remaining'.\ngot:\n%s", got)
 	}
 }
 
@@ -96,9 +119,18 @@ func TestFormatFullResults(t *testing.T) {
 	}
 	result := formatFullResults(pv, nil)
 	got := resultText(result)
-	want := "Goal 1 (1):\n  H : True\n  ────────────────────\n  A\n\n2 goals remaining\n"
+	want := "Goal 1 of 2:\n  H : True\n  ────────────────────\n  A\n\n2 goals remaining\n"
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}
+
+func TestFormatFullResults_ProofComplete(t *testing.T) {
+	pv := &ProofView{} // GoalCount=0, UnfocusedCount=0
+	result := formatFullResults(pv, nil)
+	got := resultText(result)
+	if !strings.Contains(got, "Proof complete!") {
+		t.Errorf("expected 'Proof complete!'.\ngot:\n%s", got)
 	}
 }
 
@@ -156,8 +188,8 @@ func TestFormatDeltaResults_NewFocusedGoal(t *testing.T) {
 	result := formatDeltaResults(prev, cur, nil)
 	got := resultText(result)
 	// Different GoalID → full context shown (no diff markers).
-	if !strings.Contains(got, "Goal 1 (2):") {
-		t.Errorf("expected goal header with new ID.\ngot:\n%s", got)
+	if !strings.Contains(got, "Goal:") {
+		t.Errorf("expected 'Goal:' header.\ngot:\n%s", got)
 	}
 	if !strings.Contains(got, "  B\n") {
 		t.Errorf("expected full goal text for new goal.\ngot:\n%s", got)

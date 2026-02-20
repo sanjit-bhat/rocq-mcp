@@ -5,10 +5,11 @@ package main
 // ProofView stores the focused goal as pre-rendered text, plus metadata.
 // Only the first focused goal (Goals[0]) is kept; GoalCount tracks the total.
 type ProofView struct {
-	GoalCount int      // total number of focused goals
-	GoalID    string   // ID of the focused goal
-	GoalText  string   // pre-rendered: hypotheses + separator + conclusion
-	Messages  []string // prover messages
+	GoalCount      int      // total number of focused goals
+	UnfocusedCount int      // total number of unfocused goals (in focus blocks, shelved, etc.)
+	GoalID         string   // ID of the focused goal
+	GoalText       string   // pre-rendered: hypotheses + separator + conclusion
+	Messages       []string // prover messages
 }
 
 // Diagnostic is an LSP diagnostic.
