@@ -177,6 +177,20 @@ index 1234..5678 100644
 	}
 }
 
+func TestFormatDeltaResults_SameGoalDiff(t *testing.T) {
+	prev := &ProofView{
+		Goals: []Goal{{ID: "1", Text: "  n : nat\n  ────────────────────\n  0 + n = n\n"}},
+	}
+	cur := &ProofView{
+		Goals: []Goal{{ID: "1", Text: "  n : nat\n  ────────────────────\n  n = n\n"}},
+	}
+	got := resultText(formatDeltaResults(prev, cur, nil))
+	want := "Goal:\n\n@@ -3 +3 @@\n-  0 + n = n\n+  n = n\n"
+	if got != want {
+		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}
+
 func TestFormatDeltaResults_NewFocusedGoal(t *testing.T) {
 	prev := &ProofView{
 		Goals: []Goal{

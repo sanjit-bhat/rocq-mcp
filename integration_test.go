@@ -417,6 +417,66 @@ complex_goal_flow is defined
 	}
 }
 
+func TestDiffGoal(t *testing.T) {
+	sm := newStateManager(nil)
+	defer sm.shutdown()
+
+	path, _ := filepath.Abs("testdata/diff_goal.v")
+	if err := sm.openDoc(path); err != nil {
+		t.Fatalf("openDoc: %v", err)
+	}
+
+	// Sentence boundaries (all via stepForward):
+	//   intros n m.           step 1 — initial goal (full, new ID)
+	//   rewrite Nat.add_comm. step 2 — changes conclusion (full, new ID)
+	//   reflexivity.          step 3 — proof complete
+	//   Qed.                  step 4 — proof registered
+
+	step := func() string {
+		result, _, _ := doStep(sm, path, "prover/stepForward")
+		return resultText(result)
+	}
+
+	check := func(label, got, want string) {
+		t.Helper()
+		if got != want {
+			t.Errorf("%s:\nwant:\n%s\ngot:\n%s", label, want, got)
+		}
+	}
+
+	// doCheck positions after "Require Import Arith." and "Proof."
+	doCheck(sm, path, 4, 0)
+
+	// Step 1: intros n m — full (new goal ID from Proof. state).
+	check("step 1 (intros)", step(), `Goal:
+  n, m : nat
+  ────────────────────
+  n + m = m + n
+`)
+
+	// Step 2: rewrite Nat.add_comm — full (vsrocq assigns new goal ID).
+	check("step 2 (rewrite)", step(), `Goal:
+  n, m : nat
+  ────────────────────
+  m + n = m + n
+`)
+
+	// Step 3: reflexivity — proof complete.
+	check("step 3 (reflexivity)", step(), `Proof complete!
+`)
+
+	// Step 4: Qed — proof registered.
+	check("step 4 (Qed)", step(), `Proof complete!
+
+=== Messages ===
+diff_goal is defined
+`)
+
+	if err := sm.closeDoc(path); err != nil {
+		t.Fatalf("closeDoc: %v", err)
+	}
+}
+
 func resultText(r *mcp.CallToolResult) string {
 	if r == nil {
 		return "<nil>"
