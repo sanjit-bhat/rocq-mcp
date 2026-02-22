@@ -4,13 +4,10 @@ rules:
   this ensures each call matches an allowed permission pattern (e.g. `git *`).
 - NEVER use Bash for file reading/searching. use Read, Grep, Glob instead.
   these are already allowed and don't require approval.
-- NEVER use `cat`, `head`, `tail`, `ls`, `find`, `grep`, `rg` in Bash.
 - clone exploratory code into `/tmp`.
 i've given permission for you to read that dir.
-- we're using github.com/modelcontextprotocol/go-sdk.
 - commit checkpoints. write concise, descriptive commits.
 - write commit messages to a fresh random file in `/tmp`,
   then run `git commit -F {file_path}`.
   this avoids multi-line shell quoting issues with the `Bash(git *)` permission pattern.
-- update your plan.md whenever you're done with something. commit that.
 - test often to make sure you're on the right track.
