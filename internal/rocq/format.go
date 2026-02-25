@@ -215,8 +215,14 @@ func ParseProofView(params json.RawMessage) *ProofView {
 		return nil
 	}
 
+	// background_subgoals includes focused goals, so subtract them.
+	unfocused := len(raw.Proof.UnfocusedGoals) - len(raw.Proof.Goals)
+	if unfocused < 0 {
+		log.Printf("warning: fewer unfocused goals (%d) than focused (%d)", len(raw.Proof.UnfocusedGoals), len(raw.Proof.Goals))
+		unfocused = 0
+	}
 	pv := &ProofView{
-		UnfocusedCount: len(raw.Proof.UnfocusedGoals) + len(raw.Proof.ShelvedGoals) + len(raw.Proof.GivenUpGoals),
+		UnfocusedCount: unfocused + len(raw.Proof.ShelvedGoals) + len(raw.Proof.GivenUpGoals),
 	}
 
 	// Pre-render all focused goals.
