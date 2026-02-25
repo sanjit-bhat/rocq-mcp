@@ -97,8 +97,8 @@ func (c *lspCodec) decode() (*rawMessage, error) {
 		if line == "" {
 			break
 		}
-		if strings.HasPrefix(line, "Content-Length: ") {
-			n, err := strconv.Atoi(strings.TrimPrefix(line, "Content-Length: "))
+		if after, ok := strings.CutPrefix(line, "Content-Length: "); ok {
+			n, err := strconv.Atoi(after)
 			if err != nil {
 				return nil, fmt.Errorf("parse Content-Length: %w", err)
 			}
