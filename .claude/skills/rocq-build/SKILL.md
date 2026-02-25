@@ -21,5 +21,4 @@ make -j10 path/to/file.vos
 - Use `rocq_check` at a specific line to see proof goals mid-proof
 - Use `rocq_step_forward` / `rocq_step_backward` for fine-grained stepping
 - `rocq_check_all` returns both errors and remaining proof goals
-- Use `rocq_get_proof_state` when you need full context (all hypotheses and goals)
 - Always sync after editing — the checker reads from disk

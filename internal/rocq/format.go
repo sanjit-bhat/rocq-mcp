@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -24,112 +22,8 @@ func RenderGoalText(hyps []string, conclusion string) string {
 	return sb.String()
 }
 
-// FormatDeltaResults formats proof state as a delta against the previous proof view.
-// prev is always non-nil (initialized to zero-value in OpenDoc).
-// Same single goal ID → show diff. Otherwise show all goals in full.
-func FormatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
-	var sb strings.Builder
-
-	if pv != nil {
-		goalCount := len(pv.Goals)
-
-		// No focused goals.
-		if goalCount == 0 {
-			if pv.UnfocusedCount == 0 {
-				sb.WriteString("Proof complete!\n")
-			} else {
-				fmt.Fprintf(&sb, "Sub-goal complete! %d unfocused remaining.\n", pv.UnfocusedCount)
-			}
-		}
-
-		// Show focused goals.
-		if goalCount > 0 {
-			canDiff := len(prev.Goals) == 1 && goalCount == 1 && prev.Goals[0].ID == pv.Goals[0].ID
-			if canDiff {
-				sb.WriteString("Goal:\n")
-				d := DiffText(prev.Goals[0].Text, pv.Goals[0].Text)
-				if d == "" {
-					sb.WriteString("\nNo changes to proof state.\n")
-				} else {
-					sb.WriteString("\n")
-					sb.WriteString(d)
-				}
-			} else {
-				writeGoals(&sb, pv.Goals)
-			}
-		}
-	}
-
-	if pv != nil && len(pv.Messages) > 0 {
-		sb.WriteString("\n=== Messages ===\n")
-		for _, m := range pv.Messages {
-			fmt.Fprintf(&sb, "%s\n", m)
-		}
-	}
-
-	FormatDiagnostics(&sb, diags)
-
-	if sb.Len() == 0 {
-		sb.WriteString("No goals or diagnostics.")
-	}
-
-	return TextResult(sb.String())
-}
-
-// DiffText computes a line-level diff between old and new text using git diff.
-// Returns just the hunk lines (@@, +, -) with file headers stripped.
-// Returns empty string if texts are identical.
-func DiffText(old, new string) string {
-	if old == new {
-		return ""
-	}
-
-	oldFile, err := os.CreateTemp("", "rocq-diff-old-*")
-	if err != nil {
-		log.Fatalf("DiffText: create temp file: %v", err)
-	}
-	defer os.Remove(oldFile.Name())
-
-	newFile, err := os.CreateTemp("", "rocq-diff-new-*")
-	if err != nil {
-		oldFile.Close()
-		log.Fatalf("DiffText: create temp file: %v", err)
-	}
-	defer os.Remove(newFile.Name())
-
-	oldFile.WriteString(old)
-	oldFile.Close()
-	newFile.WriteString(new)
-	newFile.Close()
-
-	cmd := exec.Command("git", "diff", "--no-index", "--histogram", "--unified=0", oldFile.Name(), newFile.Name())
-	out, _ := cmd.Output()
-	// git diff exits 1 when files differ, so ignore exit error.
-	if len(out) == 0 {
-		log.Fatal("DiffText: git diff produced no output for differing inputs")
-	}
-
-	return ParseDiffHunks(string(out))
-}
-
-// ParseDiffHunks extracts just the @@ hunk headers and +/- lines from git diff output.
-func ParseDiffHunks(raw string) string {
-	var sb strings.Builder
-	for line := range strings.SplitSeq(raw, "\n") {
-		if strings.HasPrefix(line, "@@") || strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-") {
-			// Skip file headers (--- a/..., +++ b/...).
-			if strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") {
-				continue
-			}
-			sb.WriteString(line)
-			sb.WriteString("\n")
-		}
-	}
-	return sb.String()
-}
-
-// writeGoals writes all focused goals to the string builder.
-func writeGoals(sb *strings.Builder, goals []Goal) {
+// WriteGoals writes all focused goals to the string builder.
+func WriteGoals(sb *strings.Builder, goals []Goal) {
 	if len(goals) == 1 {
 		sb.WriteString("Goal:\n")
 		sb.WriteString(goals[0].Text)
@@ -144,17 +38,45 @@ func writeGoals(sb *strings.Builder, goals []Goal) {
 	}
 }
 
-// FormatFullResults formats the complete proof state without deltas.
+// FormatBackgroundCounts returns a summary of non-zero background goal counts.
+// Returns empty string if all counts are zero.
+func FormatBackgroundCounts(pv *ProofView) string {
+	var parts []string
+	if pv.UnfocusedCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d unfocused", pv.UnfocusedCount))
+	}
+	if pv.ShelvedCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d shelved", pv.ShelvedCount))
+	}
+	if pv.GivenUpCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d given up", pv.GivenUpCount))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, ", ")
+}
+
+// FormatFullResults formats the complete proof state.
 func FormatFullResults(pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
 	var sb strings.Builder
 
 	if pv != nil {
-		if len(pv.Goals) == 0 && pv.UnfocusedCount == 0 {
-			sb.WriteString("Proof complete!\n")
+		bg := FormatBackgroundCounts(pv)
+
+		if len(pv.Goals) == 0 {
+			if bg == "" {
+				sb.WriteString("Proof complete!\n")
+			} else {
+				fmt.Fprintf(&sb, "No focused goals. %s remaining.\n", bg)
+			}
 		}
 
 		if len(pv.Goals) > 0 {
-			writeGoals(&sb, pv.Goals)
+			WriteGoals(&sb, pv.Goals)
+			if bg != "" {
+				fmt.Fprintf(&sb, "\n(+ %s)\n", bg)
+			}
 		}
 	}
 
@@ -222,7 +144,9 @@ func ParseProofView(params json.RawMessage) *ProofView {
 		unfocused = 0
 	}
 	pv := &ProofView{
-		UnfocusedCount: unfocused + len(raw.Proof.ShelvedGoals) + len(raw.Proof.GivenUpGoals),
+		UnfocusedCount: unfocused,
+		ShelvedCount:   len(raw.Proof.ShelvedGoals),
+		GivenUpCount:   len(raw.Proof.GivenUpGoals),
 	}
 
 	// Pre-render all focused goals.

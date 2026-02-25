@@ -285,6 +285,8 @@ Goal 2 of 2:
   HC : C
   ────────────────────
   A /\ B
+
+(+ 1 unfocused)
 `)
 
 	check("step 3 (split)", step(), `Goal 1 of 2:
@@ -302,6 +304,8 @@ Goal 2 of 2:
   HC : C
   ────────────────────
   B
+
+(+ 1 unfocused)
 `)
 
 	check("step 4 (-)", step(), `Goal:
@@ -311,9 +315,11 @@ Goal 2 of 2:
   HC : C
   ────────────────────
   A
+
+(+ 2 unfocused)
 `)
 
-	check("step 5 (exact HA)", step(), `Sub-goal complete! 2 unfocused remaining.
+	check("step 5 (exact HA)", step(), `No focused goals. 2 unfocused remaining.
 `)
 
 	check("step 6 (-)", step(), `Goal:
@@ -323,9 +329,11 @@ Goal 2 of 2:
   HC : C
   ────────────────────
   B
+
+(+ 1 unfocused)
 `)
 
-	check("step 7 (exact HB)", step(), `Sub-goal complete! 1 unfocused remaining.
+	check("step 7 (exact HB)", step(), `No focused goals. 1 unfocused remaining.
 `)
 
 	check("step 8 (})", step(), `Goal:
@@ -360,7 +368,7 @@ Goal 2 of 2:
 	// Step 10: - — bullet, no text change.
 	step()
 
-	check("step 11 (exact HAB)", step(), `Sub-goal complete! 1 unfocused remaining.
+	check("step 11 (exact HAB)", step(), `No focused goals. 1 unfocused remaining.
 `)
 
 	check("step 12 (-)", step(), `Goal:
@@ -380,55 +388,6 @@ Goal 2 of 2:
 
 === Messages ===
 complex_goal_flow is defined
-`)
-
-	if err := sm.CloseDoc(path); err != nil {
-		t.Fatalf("CloseDoc: %v", err)
-	}
-}
-
-func TestDiffGoal(t *testing.T) {
-	sm := NewStateManager(nil)
-	defer sm.Shutdown()
-
-	path := testdataPath("diff_goal.v")
-	if err := sm.OpenDoc(path); err != nil {
-		t.Fatalf("OpenDoc: %v", err)
-	}
-
-	step := func() string {
-		result, _, _ := DoStep(sm, path, "prover/stepForward")
-		return resultText(result)
-	}
-
-	check := func(label, got, want string) {
-		t.Helper()
-		if got != want {
-			t.Errorf("%s:\nwant:\n%s\ngot:\n%s", label, want, got)
-		}
-	}
-
-	DoCheck(sm, path, 4, 0)
-
-	check("step 1 (intros)", step(), `Goal:
-  n, m : nat
-  ────────────────────
-  n + m = m + n
-`)
-
-	check("step 2 (rewrite)", step(), `Goal:
-  n, m : nat
-  ────────────────────
-  m + n = m + n
-`)
-
-	check("step 3 (reflexivity)", step(), `Proof complete!
-`)
-
-	check("step 4 (Qed)", step(), `Proof complete!
-
-=== Messages ===
-diff_goal is defined
 `)
 
 	if err := sm.CloseDoc(path); err != nil {

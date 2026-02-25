@@ -13,12 +13,11 @@ import (
 
 // DocState tracks per-document state.
 type DocState struct {
-	URI           string
-	Version       int
-	Content       string
-	Diagnostics   []Diagnostic
-	ProofView     *ProofView
-	PrevProofView *ProofView // previous proof view for delta computation
+	URI         string
+	Version     int
+	Content     string
+	Diagnostics []Diagnostic
+	ProofView   *ProofView
 
 	// Channels for bridging async notifications to sync tool calls.
 	ProofViewCh  chan *ProofView
@@ -106,13 +105,12 @@ func (sm *StateManager) OpenDoc(path string) error {
 	}
 
 	doc := &DocState{
-		URI:           uri,
-		Version:       1,
-		Content:       string(content),
-		PrevProofView: &ProofView{}, // zero-value so FormatDeltaResults always has non-nil prev
-		ProofViewCh:   make(chan *ProofView, 16),
-		DiagnosticCh:  make(chan []Diagnostic, 16),
-		CursorCh:      make(chan Position, 16),
+		URI:          uri,
+		Version:      1,
+		Content:      string(content),
+		ProofViewCh:  make(chan *ProofView, 16),
+		DiagnosticCh: make(chan []Diagnostic, 16),
+		CursorCh:     make(chan Position, 16),
 	}
 	sm.Docs[uri] = doc
 

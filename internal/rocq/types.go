@@ -10,7 +10,9 @@ type Goal struct {
 
 // ProofView stores all focused goals as pre-rendered text, plus metadata.
 type ProofView struct {
-	UnfocusedCount int      // total number of unfocused goals (in focus blocks, shelved, etc.)
+	UnfocusedCount int // background goals (unfocusedGoals minus focused)
+	ShelvedCount   int
+	GivenUpCount   int
 	Goals          []Goal   // all focused goals, pre-rendered
 	Messages       []string // prover messages
 }

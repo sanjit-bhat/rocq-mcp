@@ -75,7 +75,7 @@ func DoStep(sm *StateManager, file string, method string) (*mcp.CallToolResult, 
 		return ErrResult(err), nil, nil
 	}
 
-	return collectResultsDelta(doc)
+	return collectResultsFull(doc)
 }
 
 // WaitNotifications waits for proofView and diagnostics notifications from vsrocq.
@@ -110,25 +110,10 @@ func WaitNotifications(doc *DocState) (*ProofView, []Diagnostic) {
 	return pv, diags
 }
 
-// collectResultsFull waits for notifications and formats with full context (no diffs).
+// collectResultsFull waits for notifications and formats the complete proof state.
 func collectResultsFull(doc *DocState) (*mcp.CallToolResult, any, error) {
 	pv, diags := WaitNotifications(doc)
 	result := FormatFullResults(pv, diags)
-	doc.PrevProofView = pv
-	if pv != nil {
-		doc.ProofView = pv
-	}
-	if diags != nil {
-		doc.Diagnostics = diags
-	}
-	return result, nil, nil
-}
-
-// collectResultsDelta waits for notifications and formats as delta against previous state.
-func collectResultsDelta(doc *DocState) (*mcp.CallToolResult, any, error) {
-	pv, diags := WaitNotifications(doc)
-	result := FormatDeltaResults(doc.PrevProofView, pv, diags)
-	doc.PrevProofView = pv
 	if pv != nil {
 		doc.ProofView = pv
 	}
@@ -239,7 +224,6 @@ func DoReset(sm *StateManager, file string) (*mcp.CallToolResult, any, error) {
 	// Clear cached proof state — it's no longer valid after reset.
 	sm.Mu.Lock()
 	doc.ProofView = nil
-	doc.PrevProofView = nil
 	doc.Diagnostics = nil
 	sm.Mu.Unlock()
 

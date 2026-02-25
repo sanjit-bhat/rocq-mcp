@@ -92,22 +92,6 @@ func registerTools(server *mcp.Server, sm *rocq.StateManager) {
 		return rocq.DoStep(sm, args.File, "prover/stepBackward")
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "rocq_get_proof_state",
-		Description: "Get the full current proof state with all goals and hypotheses. Use this when you need the complete context rather than the delta returned by step/check.",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args fileArg) (*mcp.CallToolResult, any, error) {
-		sm.Mu.Lock()
-		doc, err := sm.GetDoc(args.File)
-		sm.Mu.Unlock()
-		if err != nil {
-			return rocq.ErrResult(err), nil, nil
-		}
-		if doc.ProofView == nil {
-			return rocq.TextResult("No proof state available. Run rocq_check or rocq_step_forward first."), nil, nil
-		}
-		return rocq.FormatFullResults(doc.ProofView, doc.Diagnostics), nil, nil
-	})
-
 	// Tier 2: Query tools.
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "rocq_about",

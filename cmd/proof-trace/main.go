@@ -115,22 +115,19 @@ func main() {
 		}
 		fmt.Println()
 
-		// Print focused goals.
-		if pv != nil && len(pv.Goals) > 0 {
-			fmt.Printf("Focused Goals (%d):\n", len(pv.Goals))
-			for i, g := range pv.Goals {
-				if len(pv.Goals) > 1 {
-					fmt.Printf("Goal %d:\n", i+1)
-				}
-				fmt.Print(g.Text)
-			}
-		} else if pv != nil {
-			fmt.Println("Focused Goals (0)")
-		}
-
-		// Print unfocused counts.
+		// Print proof state.
 		if pv != nil {
-			fmt.Printf("Unfocused: %d\n", pv.UnfocusedCount)
+			var sb strings.Builder
+			if len(pv.Goals) > 0 {
+				rocq.WriteGoals(&sb, pv.Goals)
+			} else {
+				sb.WriteString("Focused Goals (0)\n")
+			}
+			bg := rocq.FormatBackgroundCounts(pv)
+			if bg != "" {
+				fmt.Fprintf(&sb, "(%s)\n", bg)
+			}
+			fmt.Print(sb.String())
 		}
 
 		// Print messages.
@@ -143,25 +140,9 @@ func main() {
 
 		// Print diagnostics.
 		if len(diags) > 0 {
-			fmt.Printf("\nDiagnostics (%d):\n", len(diags))
-			for _, d := range diags {
-				severity := "info"
-				switch d.Severity {
-				case 1:
-					severity = "error"
-				case 2:
-					severity = "warning"
-				case 3:
-					severity = "info"
-				case 4:
-					severity = "hint"
-				}
-				fmt.Printf("  [%s] line %d:%d–%d:%d: %s\n",
-					severity,
-					d.Range.Start.Line+1, d.Range.Start.Character,
-					d.Range.End.Line+1, d.Range.End.Character,
-					d.Message)
-			}
+			var sb strings.Builder
+			rocq.FormatDiagnostics(&sb, diags)
+			fmt.Print(sb.String())
 		}
 
 		fmt.Println()
