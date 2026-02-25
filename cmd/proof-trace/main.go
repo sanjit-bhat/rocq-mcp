@@ -15,12 +15,18 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: proof-trace [vsrocqtop flags...] <file.v>\n")
+		fmt.Fprintf(os.Stderr, "Usage: proof-trace <file.v> [-- vsrocqtop flags...]\n")
 		os.Exit(1)
 	}
 
-	file := os.Args[len(os.Args)-1]
-	vsrocqArgs := os.Args[1 : len(os.Args)-1]
+	file := os.Args[1]
+	var vsrocqArgs []string
+	for i, arg := range os.Args[2:] {
+		if arg == "--" {
+			vsrocqArgs = os.Args[i+3:]
+			break
+		}
+	}
 
 	sm := rocq.NewStateManager(vsrocqArgs)
 	defer sm.Shutdown()
