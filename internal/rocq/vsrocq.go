@@ -1,4 +1,4 @@
-package main
+package rocq
 
 // vsrocq.go — vsrocqtop subprocess management and LSP client handshake.
 
@@ -11,8 +11,8 @@ import (
 	"sync"
 )
 
-// vsrocqClient manages a vsrocqtop subprocess and its LSP communication.
-type vsrocqClient struct {
+// VsrocqClient manages a vsrocqtop subprocess and its LSP communication.
+type VsrocqClient struct {
 	cmd   *exec.Cmd
 	codec *lspCodec
 
@@ -25,7 +25,7 @@ type vsrocqClient struct {
 	handlersMu sync.RWMutex
 }
 
-func newVsrocqClient(extraArgs []string) (*vsrocqClient, error) {
+func newVsrocqClient(extraArgs []string) (*VsrocqClient, error) {
 	args := append([]string{}, extraArgs...)
 	cmd := exec.Command("vsrocqtop", args...)
 	cmd.Stderr = os.Stderr
@@ -43,7 +43,7 @@ func newVsrocqClient(extraArgs []string) (*vsrocqClient, error) {
 		return nil, fmt.Errorf("start vsrocqtop: %w", err)
 	}
 
-	client := &vsrocqClient{
+	client := &VsrocqClient{
 		cmd:      cmd,
 		codec:    newLSPCodec(stdout, stdin),
 		pending:  make(map[int64]chan *rawMessage),
@@ -55,7 +55,7 @@ func newVsrocqClient(extraArgs []string) (*vsrocqClient, error) {
 }
 
 // readLoop reads messages from vsrocqtop and dispatches them.
-func (c *vsrocqClient) readLoop() {
+func (c *VsrocqClient) readLoop() {
 	for {
 		msg, err := c.codec.decode()
 		if err != nil {
@@ -92,17 +92,14 @@ func (c *vsrocqClient) readLoop() {
 }
 
 // handleServerRequest responds to server→client requests.
-func (c *vsrocqClient) handleServerRequest(id int64, method string, params json.RawMessage) {
+func (c *VsrocqClient) handleServerRequest(id int64, method string, params json.RawMessage) {
 	switch method {
 	case "workspace/configuration":
-		// Respond with vsrocq settings for each requested item.
 		settings := map[string]any{
 			"proof": map[string]any{
 				"mode": 0, // Manual
 			},
 		}
-		// workspace/configuration expects an array of results, one per item.
-		// We return our settings for each item requested.
 		var req struct {
 			Items []any `json:"items"`
 		}
@@ -132,12 +129,10 @@ func (c *vsrocqClient) handleServerRequest(id int64, method string, params json.
 	}
 }
 
-// request sends an LSP request and waits for the response.
-func (c *vsrocqClient) request(method string, params any) (json.RawMessage, error) {
+// Request sends an LSP request and waits for the response.
+func (c *VsrocqClient) Request(method string, params any) (json.RawMessage, error) {
 	ch := make(chan *rawMessage, 1)
 
-	// Register the response channel before sending so readLoop can't
-	// deliver the response before we're listening.
 	id := c.codec.nextID.Add(1) - 1
 	c.pendingMu.Lock()
 	c.pending[id] = ch
@@ -169,20 +164,20 @@ func (c *vsrocqClient) request(method string, params any) (json.RawMessage, erro
 	return resp.Result, nil
 }
 
-// notify sends an LSP notification.
-func (c *vsrocqClient) notify(method string, params any) error {
+// Notify sends an LSP notification.
+func (c *VsrocqClient) Notify(method string, params any) error {
 	return c.codec.sendNotification(method, params)
 }
 
 // onNotification registers a handler for a server notification method.
-func (c *vsrocqClient) onNotification(method string, handler func(json.RawMessage)) {
+func (c *VsrocqClient) onNotification(method string, handler func(json.RawMessage)) {
 	c.handlersMu.Lock()
 	defer c.handlersMu.Unlock()
 	c.handlers[method] = handler
 }
 
 // initialize performs the LSP initialize/initialized handshake.
-func (c *vsrocqClient) initialize(rootURI string) error {
+func (c *VsrocqClient) initialize(rootURI string) error {
 	params := map[string]any{
 		"processId": os.Getpid(),
 		"rootUri":   rootURI,
@@ -193,16 +188,15 @@ func (c *vsrocqClient) initialize(rootURI string) error {
 		},
 	}
 
-	_, err := c.request("initialize", params)
+	_, err := c.Request("initialize", params)
 	if err != nil {
 		return fmt.Errorf("initialize: %w", err)
 	}
 
-	if err := c.notify("initialized", map[string]any{}); err != nil {
+	if err := c.Notify("initialized", map[string]any{}); err != nil {
 		return fmt.Errorf("initialized: %w", err)
 	}
 
-	// Set manual proof mode.
 	settings := map[string]any{
 		"settings": map[string]any{
 			"vsrocq": map[string]any{
@@ -212,7 +206,7 @@ func (c *vsrocqClient) initialize(rootURI string) error {
 			},
 		},
 	}
-	if err := c.notify("workspace/didChangeConfiguration", settings); err != nil {
+	if err := c.Notify("workspace/didChangeConfiguration", settings); err != nil {
 		return fmt.Errorf("didChangeConfiguration: %w", err)
 	}
 
@@ -220,12 +214,12 @@ func (c *vsrocqClient) initialize(rootURI string) error {
 }
 
 // shutdown sends the shutdown request and exit notification.
-func (c *vsrocqClient) shutdown() error {
-	_, err := c.request("shutdown", nil)
+func (c *VsrocqClient) shutdown() error {
+	_, err := c.Request("shutdown", nil)
 	if err != nil {
 		return fmt.Errorf("shutdown: %w", err)
 	}
-	if err := c.notify("exit", nil); err != nil {
+	if err := c.Notify("exit", nil); err != nil {
 		return fmt.Errorf("exit: %w", err)
 	}
 	return c.cmd.Wait()

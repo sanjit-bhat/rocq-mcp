@@ -8,13 +8,14 @@ import (
 	"os"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sanjit/rocq-mcp/internal/rocq"
 )
 
 func main() {
 	// All args after the binary name are passed through to vsrocqtop.
 	vsrocqArgs := os.Args[1:]
 
-	sm := newStateManager(vsrocqArgs)
+	sm := rocq.NewStateManager(vsrocqArgs)
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "rocq-mcp",
@@ -27,7 +28,7 @@ func main() {
 		log.Fatalf("server error: %v", err)
 	}
 
-	if err := sm.shutdown(); err != nil {
+	if err := sm.Shutdown(); err != nil {
 		log.Printf("shutdown error: %v", err)
 	}
 }

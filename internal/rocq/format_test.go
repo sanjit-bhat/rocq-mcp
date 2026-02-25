@@ -1,15 +1,31 @@
-package main
+package rocq
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func resultText(r *mcp.CallToolResult) string {
+	if r == nil {
+		return "<nil>"
+	}
+	var parts []string
+	for _, c := range r.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			parts = append(parts, tc.Text)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
 func TestFormatDeltaResults_NoPrevious(t *testing.T) {
-	prev := &ProofView{} // zero-value, as initialized in openDoc
+	prev := &ProofView{} // zero-value, as initialized in OpenDoc
 	pv := &ProofView{
 		Goals: []Goal{{ID: "1", Text: "  n : nat\n  ────────────────────\n  0 + n = n\n"}},
 	}
-	got := resultText(formatDeltaResults(prev, pv, nil))
+	got := resultText(FormatDeltaResults(prev, pv, nil))
 	want := `Goal:
   n : nat
   ────────────────────
@@ -30,7 +46,7 @@ func TestFormatDeltaResults_GoalCountDelta(t *testing.T) {
 			{ID: "3", Text: "  ────────────────────\n  B\n"},
 		},
 	}
-	got := resultText(formatDeltaResults(prev, cur, nil))
+	got := resultText(FormatDeltaResults(prev, cur, nil))
 	want := `Goal 1 of 2:
   ────────────────────
   A
@@ -49,7 +65,7 @@ func TestFormatDeltaResults_ProofComplete(t *testing.T) {
 		Goals: []Goal{{ID: "1", Text: "  ────────────────────\n  True\n"}},
 	}
 	cur := &ProofView{} // Goals empty, UnfocusedCount=0
-	got := resultText(formatDeltaResults(prev, cur, nil))
+	got := resultText(FormatDeltaResults(prev, cur, nil))
 	want := "Proof complete!\n"
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
@@ -63,7 +79,7 @@ func TestFormatDeltaResults_SubGoalComplete(t *testing.T) {
 	cur := &ProofView{
 		UnfocusedCount: 3,
 	}
-	got := resultText(formatDeltaResults(prev, cur, nil))
+	got := resultText(FormatDeltaResults(prev, cur, nil))
 	want := "Sub-goal complete! 3 unfocused remaining.\n"
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
@@ -71,7 +87,7 @@ func TestFormatDeltaResults_SubGoalComplete(t *testing.T) {
 }
 
 func TestFormatDeltaResults_WithDiagnostics(t *testing.T) {
-	got := resultText(formatDeltaResults(&ProofView{}, nil, []Diagnostic{
+	got := resultText(FormatDeltaResults(&ProofView{}, nil, []Diagnostic{
 		{
 			Severity: 1,
 			Message:  "type error",
@@ -94,7 +110,7 @@ func TestFormatDeltaResults_NoChanges(t *testing.T) {
 	pv := &ProofView{
 		Goals: []Goal{{ID: "1", Text: "  n : nat\n  ────────────────────\n  P\n"}},
 	}
-	got := resultText(formatDeltaResults(pv, pv, nil))
+	got := resultText(FormatDeltaResults(pv, pv, nil))
 	want := `Goal:
 
 No changes to proof state.
@@ -111,7 +127,7 @@ func TestFormatFullResults(t *testing.T) {
 			{ID: "2", Text: "  H : True\n  ────────────────────\n  B\n"},
 		},
 	}
-	got := resultText(formatFullResults(pv, nil))
+	got := resultText(FormatFullResults(pv, nil))
 	want := `Goal 1 of 2:
   H : True
   ────────────────────
@@ -129,7 +145,7 @@ Goal 2 of 2:
 
 func TestFormatFullResults_ProofComplete(t *testing.T) {
 	pv := &ProofView{} // Goals empty, UnfocusedCount=0
-	got := resultText(formatFullResults(pv, nil))
+	got := resultText(FormatFullResults(pv, nil))
 	want := "Proof complete!\n"
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
@@ -137,7 +153,7 @@ func TestFormatFullResults_ProofComplete(t *testing.T) {
 }
 
 func TestRenderGoalText(t *testing.T) {
-	got := renderGoalText([]string{"H : True", "n : nat"}, "A")
+	got := RenderGoalText([]string{"H : True", "n : nat"}, "A")
 	want := `  H : True
   n : nat
   ────────────────────
@@ -149,7 +165,7 @@ func TestRenderGoalText(t *testing.T) {
 }
 
 func TestRenderGoalText_NoHypotheses(t *testing.T) {
-	got := renderGoalText(nil, "True")
+	got := RenderGoalText(nil, "True")
 	want := `  ────────────────────
   True
 `
@@ -167,7 +183,7 @@ index 1234..5678 100644
 -old line
 +new line
 `
-	got := parseDiffHunks(raw)
+	got := ParseDiffHunks(raw)
 	want := `@@ -1,2 +1,2 @@
 -old line
 +new line
@@ -184,7 +200,7 @@ func TestFormatDeltaResults_SameGoalDiff(t *testing.T) {
 	cur := &ProofView{
 		Goals: []Goal{{ID: "1", Text: "  n : nat\n  ────────────────────\n  n = n\n"}},
 	}
-	got := resultText(formatDeltaResults(prev, cur, nil))
+	got := resultText(FormatDeltaResults(prev, cur, nil))
 	want := "Goal:\n\n@@ -3 +3 @@\n-  0 + n = n\n+  n = n\n"
 	if got != want {
 		t.Errorf("mismatch.\nwant:\n%s\ngot:\n%s", want, got)
@@ -201,7 +217,7 @@ func TestFormatDeltaResults_NewFocusedGoal(t *testing.T) {
 	cur := &ProofView{
 		Goals: []Goal{{ID: "2", Text: "  H : True\n  ────────────────────\n  B\n"}},
 	}
-	got := resultText(formatDeltaResults(prev, cur, nil))
+	got := resultText(FormatDeltaResults(prev, cur, nil))
 	want := `Goal:
   H : True
   ────────────────────

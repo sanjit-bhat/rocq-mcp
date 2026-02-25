@@ -10,6 +10,19 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func resultText(r *mcp.CallToolResult) string {
+	if r == nil {
+		return "<nil>"
+	}
+	var parts []string
+	for _, c := range r.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			parts = append(parts, tc.Text)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
 func TestE2EMCPProofSession(t *testing.T) {
 	// Build the binary.
 	binPath := filepath.Join(t.TempDir(), "rocq-mcp")

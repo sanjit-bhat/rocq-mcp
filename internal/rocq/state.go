@@ -1,4 +1,4 @@
-package main
+package rocq
 
 // state.go — per-document state tracking and vsrocq notification dispatch.
 
@@ -11,8 +11,8 @@ import (
 	"sync"
 )
 
-// docState tracks per-document state.
-type docState struct {
+// DocState tracks per-document state.
+type DocState struct {
 	URI           string
 	Version       int
 	Content       string
@@ -21,47 +21,48 @@ type docState struct {
 	PrevProofView *ProofView // previous proof view for delta computation
 
 	// Channels for bridging async notifications to sync tool calls.
-	proofViewCh  chan *ProofView
-	diagnosticCh chan []Diagnostic
+	ProofViewCh  chan *ProofView
+	DiagnosticCh chan []Diagnostic
+	CursorCh     chan Position
 }
 
-// stateManager manages per-document state and the vsrocq client.
-type stateManager struct {
-	client *vsrocqClient
-	docs   map[string]*docState // keyed by URI
-	mu     sync.Mutex
+// StateManager manages per-document state and the vsrocq client.
+type StateManager struct {
+	Client *VsrocqClient
+	Docs   map[string]*DocState // keyed by URI
+	Mu     sync.Mutex
 	args   []string // extra args for vsrocqtop
 
 	// Search result channels, keyed by search ID.
-	searchHandlers   map[string]chan searchResult
+	searchHandlers   map[string]chan SearchResult
 	searchHandlersMu sync.Mutex
 }
 
-func newStateManager(args []string) *stateManager {
-	return &stateManager{
-		docs:           make(map[string]*docState),
+func NewStateManager(args []string) *StateManager {
+	return &StateManager{
+		Docs:           make(map[string]*DocState),
 		args:           args,
-		searchHandlers: make(map[string]chan searchResult),
+		searchHandlers: make(map[string]chan SearchResult),
 	}
 }
 
 // ensureClient lazily starts vsrocqtop.
-func (sm *stateManager) ensureClient() error {
-	if sm.client != nil {
+func (sm *StateManager) ensureClient() error {
+	if sm.Client != nil {
 		return nil
 	}
 	client, err := newVsrocqClient(sm.args)
 	if err != nil {
 		return err
 	}
-	sm.client = client
+	sm.Client = client
 
 	// Register notification handlers.
 	client.onNotification("textDocument/publishDiagnostics", sm.handleDiagnostics)
 	client.onNotification("prover/proofView", sm.handleProofView)
 	client.onNotification("prover/searchResult", sm.handleSearchResult)
 	client.onNotification("prover/updateHighlights", func(params json.RawMessage) {})
-	client.onNotification("prover/moveCursor", func(params json.RawMessage) {})
+	client.onNotification("prover/moveCursor", sm.handleMoveCursor)
 	client.onNotification("prover/blockOnError", func(params json.RawMessage) {})
 	client.onNotification("prover/debugMessage", func(params json.RawMessage) {
 		log.Printf("vsrocq debug: %s", string(params))
@@ -77,7 +78,7 @@ func (sm *stateManager) ensureClient() error {
 	return nil
 }
 
-func fileURI(path string) string {
+func FileURI(path string) string {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		abs = path
@@ -85,17 +86,17 @@ func fileURI(path string) string {
 	return "file://" + abs
 }
 
-// openDoc opens a .v file in vsrocq.
-func (sm *stateManager) openDoc(path string) error {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+// OpenDoc opens a .v file in vsrocq.
+func (sm *StateManager) OpenDoc(path string) error {
+	sm.Mu.Lock()
+	defer sm.Mu.Unlock()
 
 	if err := sm.ensureClient(); err != nil {
 		return err
 	}
 
-	uri := fileURI(path)
-	if _, exists := sm.docs[uri]; exists {
+	uri := FileURI(path)
+	if _, exists := sm.Docs[uri]; exists {
 		return fmt.Errorf("document already open: %s", path)
 	}
 
@@ -104,15 +105,16 @@ func (sm *stateManager) openDoc(path string) error {
 		return fmt.Errorf("read file: %w", err)
 	}
 
-	doc := &docState{
+	doc := &DocState{
 		URI:           uri,
 		Version:       1,
 		Content:       string(content),
-		PrevProofView: &ProofView{}, // zero-value so formatDeltaResults always has non-nil prev
-		proofViewCh:   make(chan *ProofView, 16),
-		diagnosticCh:  make(chan []Diagnostic, 16),
+		PrevProofView: &ProofView{}, // zero-value so FormatDeltaResults always has non-nil prev
+		ProofViewCh:   make(chan *ProofView, 16),
+		DiagnosticCh:  make(chan []Diagnostic, 16),
+		CursorCh:      make(chan Position, 16),
 	}
-	sm.docs[uri] = doc
+	sm.Docs[uri] = doc
 
 	params := map[string]any{
 		"textDocument": map[string]any{
@@ -122,16 +124,16 @@ func (sm *stateManager) openDoc(path string) error {
 			"text":       doc.Content,
 		},
 	}
-	return sm.client.notify("textDocument/didOpen", params)
+	return sm.Client.Notify("textDocument/didOpen", params)
 }
 
-// closeDoc closes a document in vsrocq.
-func (sm *stateManager) closeDoc(path string) error {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+// CloseDoc closes a document in vsrocq.
+func (sm *StateManager) CloseDoc(path string) error {
+	sm.Mu.Lock()
+	defer sm.Mu.Unlock()
 
-	uri := fileURI(path)
-	doc, ok := sm.docs[uri]
+	uri := FileURI(path)
+	doc, ok := sm.Docs[uri]
 	if !ok {
 		return fmt.Errorf("document not open: %s", path)
 	}
@@ -141,18 +143,18 @@ func (sm *stateManager) closeDoc(path string) error {
 			"uri": doc.URI,
 		},
 	}
-	err := sm.client.notify("textDocument/didClose", params)
-	delete(sm.docs, uri)
+	err := sm.Client.Notify("textDocument/didClose", params)
+	delete(sm.Docs, uri)
 	return err
 }
 
-// syncDoc re-reads a file from disk and sends didChange.
-func (sm *stateManager) syncDoc(path string) error {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+// SyncDoc re-reads a file from disk and sends didChange.
+func (sm *StateManager) SyncDoc(path string) error {
+	sm.Mu.Lock()
+	defer sm.Mu.Unlock()
 
-	uri := fileURI(path)
-	doc, ok := sm.docs[uri]
+	uri := FileURI(path)
+	doc, ok := sm.Docs[uri]
 	if !ok {
 		return fmt.Errorf("document not open: %s", path)
 	}
@@ -174,13 +176,13 @@ func (sm *stateManager) syncDoc(path string) error {
 			{"text": doc.Content},
 		},
 	}
-	return sm.client.notify("textDocument/didChange", params)
+	return sm.Client.Notify("textDocument/didChange", params)
 }
 
-// getDoc returns the state for a file (caller must hold lock or accept races).
-func (sm *stateManager) getDoc(path string) (*docState, error) {
-	uri := fileURI(path)
-	doc, ok := sm.docs[uri]
+// GetDoc returns the state for a file (caller must hold lock or accept races).
+func (sm *StateManager) GetDoc(path string) (*DocState, error) {
+	uri := FileURI(path)
+	doc, ok := sm.Docs[uri]
 	if !ok {
 		return nil, fmt.Errorf("document not open: %s", path)
 	}
@@ -188,7 +190,7 @@ func (sm *stateManager) getDoc(path string) (*docState, error) {
 }
 
 // handleDiagnostics processes publishDiagnostics notifications.
-func (sm *stateManager) handleDiagnostics(params json.RawMessage) {
+func (sm *StateManager) handleDiagnostics(params json.RawMessage) {
 	var p struct {
 		URI         string       `json:"uri"`
 		Diagnostics []Diagnostic `json:"diagnostics"`
@@ -198,25 +200,25 @@ func (sm *stateManager) handleDiagnostics(params json.RawMessage) {
 		return
 	}
 
-	sm.mu.Lock()
-	doc, ok := sm.docs[p.URI]
+	sm.Mu.Lock()
+	doc, ok := sm.Docs[p.URI]
 	if ok {
 		doc.Diagnostics = p.Diagnostics
 	}
-	sm.mu.Unlock()
+	sm.Mu.Unlock()
 
 	if ok {
 		// Non-blocking send to channel.
 		select {
-		case doc.diagnosticCh <- p.Diagnostics:
+		case doc.DiagnosticCh <- p.Diagnostics:
 		default:
 		}
 	}
 }
 
 // handleProofView processes prover/proofView notifications.
-func (sm *stateManager) handleProofView(params json.RawMessage) {
-	pv := parseProofView(params)
+func (sm *StateManager) handleProofView(params json.RawMessage) {
+	pv := ParseProofView(params)
 	if pv == nil {
 		log.Printf("failed to parse proofView")
 		return
@@ -224,32 +226,66 @@ func (sm *stateManager) handleProofView(params json.RawMessage) {
 
 	// proofView doesn't include URI directly — deliver to all docs with waiting channels.
 	// In practice, there's typically only one active proof at a time.
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	for _, doc := range sm.docs {
+	sm.Mu.Lock()
+	defer sm.Mu.Unlock()
+	for _, doc := range sm.Docs {
 		select {
-		case doc.proofViewCh <- pv:
+		case doc.ProofViewCh <- pv:
 		default:
 		}
 	}
 }
 
-// registerSearchHandler registers a channel to receive search results for a given ID.
-func (sm *stateManager) registerSearchHandler(id string, ch chan searchResult) {
+// handleMoveCursor processes prover/moveCursor notifications.
+func (sm *StateManager) handleMoveCursor(params json.RawMessage) {
+	var p struct {
+		URI   string `json:"uri"`
+		Range Range  `json:"range"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		log.Printf("parse moveCursor: %v", err)
+		return
+	}
+
+	pos := p.Range.End
+	sm.Mu.Lock()
+	defer sm.Mu.Unlock()
+
+	if p.URI != "" {
+		if doc, ok := sm.Docs[p.URI]; ok {
+			select {
+			case doc.CursorCh <- pos:
+			default:
+			}
+		}
+		return
+	}
+
+	// No URI — broadcast to all docs (like proofView).
+	for _, doc := range sm.Docs {
+		select {
+		case doc.CursorCh <- pos:
+		default:
+		}
+	}
+}
+
+// RegisterSearchHandler registers a channel to receive search results for a given ID.
+func (sm *StateManager) RegisterSearchHandler(id string, ch chan SearchResult) {
 	sm.searchHandlersMu.Lock()
 	defer sm.searchHandlersMu.Unlock()
 	sm.searchHandlers[id] = ch
 }
 
-// unregisterSearchHandler removes a search result channel.
-func (sm *stateManager) unregisterSearchHandler(id string) {
+// UnregisterSearchHandler removes a search result channel.
+func (sm *StateManager) UnregisterSearchHandler(id string) {
 	sm.searchHandlersMu.Lock()
 	defer sm.searchHandlersMu.Unlock()
 	delete(sm.searchHandlers, id)
 }
 
 // handleSearchResult processes prover/searchResult notifications.
-func (sm *stateManager) handleSearchResult(params json.RawMessage) {
+func (sm *StateManager) handleSearchResult(params json.RawMessage) {
 	var raw struct {
 		ID        string          `json:"id"`
 		Name      json.RawMessage `json:"name"`
@@ -260,10 +296,10 @@ func (sm *stateManager) handleSearchResult(params json.RawMessage) {
 		return
 	}
 
-	result := searchResult{
+	result := SearchResult{
 		ID:        raw.ID,
-		Name:      renderPpcmd(raw.Name),
-		Statement: renderPpcmd(raw.Statement),
+		Name:      RenderPpcmd(raw.Name),
+		Statement: RenderPpcmd(raw.Statement),
 	}
 
 	sm.searchHandlersMu.Lock()
@@ -278,10 +314,10 @@ func (sm *stateManager) handleSearchResult(params json.RawMessage) {
 	}
 }
 
-// shutdown cleans up the vsrocq client.
-func (sm *stateManager) shutdown() error {
-	if sm.client == nil {
+// Shutdown cleans up the vsrocq client.
+func (sm *StateManager) Shutdown() error {
+	if sm.Client == nil {
 		return nil
 	}
-	return sm.client.shutdown()
+	return sm.Client.shutdown()
 }

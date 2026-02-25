@@ -1,6 +1,6 @@
-package main
+package rocq
 
-// lsp.go — Content-Length framed JSON-RPC codec for LSP communication.
+// lsp.go — Content-Length framed JSON-RPC 2.0 codec for LSP communication.
 
 import (
 	"bufio"
@@ -13,7 +13,38 @@ import (
 	"sync/atomic"
 )
 
-// JSON-RPC 2.0 message types for LSP communication.
+// lspCodec handles Content-Length framed JSON-RPC reading and writing.
+type lspCodec struct {
+	reader *bufio.Reader
+	writer io.Writer
+	mu     sync.Mutex // protects writer
+	nextID atomic.Int64
+}
+
+func newLSPCodec(r io.Reader, w io.Writer) *lspCodec {
+	c := &lspCodec{
+		reader: bufio.NewReader(r),
+		writer: w,
+	}
+	c.nextID.Store(1)
+	return c
+}
+
+// rawMessage is the decoded JSON-RPC envelope.
+type rawMessage struct {
+	ID     *int64          `json:"id,omitempty"`
+	Method *string         `json:"method,omitempty"`
+	Params json.RawMessage `json:"params,omitempty"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Error  *jsonRPCError   `json:"error,omitempty"`
+}
+
+type jsonRPCError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// Wire types for encoding.
 
 type jsonRPCRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -35,60 +66,27 @@ type jsonRPCResponse struct {
 	Error   *jsonRPCError   `json:"error,omitempty"`
 }
 
-type jsonRPCError struct {
-	Code    int             `json:"code"`
-	Message string          `json:"message"`
-	Data    json.RawMessage `json:"data,omitempty"`
-}
-
-// rawMessage is a generic JSON-RPC message used for initial parsing.
-type rawMessage struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      *int64          `json:"id,omitempty"`
-	Method  *string         `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *jsonRPCError   `json:"error,omitempty"`
-}
-
-// lspCodec handles Content-Length framed LSP JSON-RPC encoding/decoding.
-type lspCodec struct {
-	reader *bufio.Reader
-	writer io.Writer
-	mu     sync.Mutex // protects writer
-	nextID atomic.Int64
-}
-
-func newLSPCodec(r io.Reader, w io.Writer) *lspCodec {
-	c := &lspCodec{
-		reader: bufio.NewReader(r),
-		writer: w,
-	}
-	c.nextID.Store(1)
-	return c
-}
-
-// encode writes a JSON-RPC message with Content-Length header.
+// encode writes a JSON-RPC message with Content-Length framing.
 func (c *lspCodec) encode(msg any) error {
 	data, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
+		return err
 	}
 	header := fmt.Sprintf("Content-Length: %d\r\n\r\n", len(data))
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	if _, err := io.WriteString(c.writer, header); err != nil {
-		return fmt.Errorf("write header: %w", err)
+		return err
 	}
-	if _, err := c.writer.Write(data); err != nil {
-		return fmt.Errorf("write body: %w", err)
-	}
-	return nil
+	_, err = c.writer.Write(data)
+	return err
 }
 
 // decode reads one Content-Length framed JSON-RPC message.
 func (c *lspCodec) decode() (*rawMessage, error) {
-	// Read headers until blank line.
+	// Read headers until empty line.
 	contentLength := -1
 	for {
 		line, err := c.reader.ReadString('\n')
@@ -99,14 +97,15 @@ func (c *lspCodec) decode() (*rawMessage, error) {
 		if line == "" {
 			break
 		}
-		if val, ok := strings.CutPrefix(line, "Content-Length: "); ok {
-			contentLength, err = strconv.Atoi(val)
+		if strings.HasPrefix(line, "Content-Length: ") {
+			n, err := strconv.Atoi(strings.TrimPrefix(line, "Content-Length: "))
 			if err != nil {
-				return nil, fmt.Errorf("parse Content-Length %q: %w", val, err)
+				return nil, fmt.Errorf("parse Content-Length: %w", err)
 			}
+			contentLength = n
 		}
-		// Ignore other headers (Content-Type, etc.)
 	}
+
 	if contentLength < 0 {
 		return nil, fmt.Errorf("missing Content-Length header")
 	}
@@ -126,6 +125,7 @@ func (c *lspCodec) decode() (*rawMessage, error) {
 // sendRequest sends a JSON-RPC request and returns the assigned ID.
 func (c *lspCodec) sendRequest(method string, params any) (int64, error) {
 	id := c.nextID.Add(1) - 1
+
 	var rawParams json.RawMessage
 	if params != nil {
 		var err error
@@ -134,12 +134,9 @@ func (c *lspCodec) sendRequest(method string, params any) (int64, error) {
 			return 0, err
 		}
 	}
-	return id, c.encode(&jsonRPCRequest{
-		JSONRPC: "2.0",
-		ID:      id,
-		Method:  method,
-		Params:  rawParams,
-	})
+
+	req := &jsonRPCRequest{JSONRPC: "2.0", ID: id, Method: method, Params: rawParams}
+	return id, c.encode(req)
 }
 
 // sendNotification sends a JSON-RPC notification (no ID, no response expected).
@@ -152,9 +149,7 @@ func (c *lspCodec) sendNotification(method string, params any) error {
 			return err
 		}
 	}
-	return c.encode(&jsonRPCNotification{
-		JSONRPC: "2.0",
-		Method:  method,
-		Params:  rawParams,
-	})
+
+	msg := &jsonRPCNotification{JSONRPC: "2.0", Method: method, Params: rawParams}
+	return c.encode(msg)
 }

@@ -1,4 +1,4 @@
-package main
+package rocq
 
 // types.go — shared domain types for proof goals, diagnostics, and LSP positions.
 
@@ -32,8 +32,8 @@ type Position struct {
 	Character int `json:"character"`
 }
 
-// searchResult is a single result from prover/searchResult notifications.
-type searchResult struct {
+// SearchResult is a single result from prover/searchResult notifications.
+type SearchResult struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Statement string `json:"statement"`

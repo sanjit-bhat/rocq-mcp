@@ -1,4 +1,4 @@
-package main
+package rocq
 
 // format.go — rendering proof views, diagnostics, and Ppcmd trees to human-readable text.
 
@@ -13,9 +13,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// renderGoalText renders a single goal body: hypotheses + separator + conclusion.
-// This is the pre-rendered text stored in ProofView.GoalText.
-func renderGoalText(hyps []string, conclusion string) string {
+// RenderGoalText renders a single goal body: hypotheses + separator + conclusion.
+func RenderGoalText(hyps []string, conclusion string) string {
 	var sb strings.Builder
 	for _, h := range hyps {
 		fmt.Fprintf(&sb, "  %s\n", h)
@@ -25,10 +24,10 @@ func renderGoalText(hyps []string, conclusion string) string {
 	return sb.String()
 }
 
-// formatDeltaResults formats proof state as a delta against the previous proof view.
-// prev is always non-nil (initialized to zero-value in openDoc).
+// FormatDeltaResults formats proof state as a delta against the previous proof view.
+// prev is always non-nil (initialized to zero-value in OpenDoc).
 // Same single goal ID → show diff. Otherwise show all goals in full.
-func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
+func FormatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
 	var sb strings.Builder
 
 	if pv != nil {
@@ -48,7 +47,7 @@ func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp
 			canDiff := len(prev.Goals) == 1 && goalCount == 1 && prev.Goals[0].ID == pv.Goals[0].ID
 			if canDiff {
 				sb.WriteString("Goal:\n")
-				d := diffText(prev.Goals[0].Text, pv.Goals[0].Text)
+				d := DiffText(prev.Goals[0].Text, pv.Goals[0].Text)
 				if d == "" {
 					sb.WriteString("\nNo changes to proof state.\n")
 				} else {
@@ -68,33 +67,33 @@ func formatDeltaResults(prev *ProofView, pv *ProofView, diags []Diagnostic) *mcp
 		}
 	}
 
-	formatDiagnostics(&sb, diags)
+	FormatDiagnostics(&sb, diags)
 
 	if sb.Len() == 0 {
 		sb.WriteString("No goals or diagnostics.")
 	}
 
-	return textResult(sb.String())
+	return TextResult(sb.String())
 }
 
-// diffText computes a line-level diff between old and new text using git diff.
+// DiffText computes a line-level diff between old and new text using git diff.
 // Returns just the hunk lines (@@, +, -) with file headers stripped.
 // Returns empty string if texts are identical.
-func diffText(old, new string) string {
+func DiffText(old, new string) string {
 	if old == new {
 		return ""
 	}
 
 	oldFile, err := os.CreateTemp("", "rocq-diff-old-*")
 	if err != nil {
-		log.Fatalf("diffText: create temp file: %v", err)
+		log.Fatalf("DiffText: create temp file: %v", err)
 	}
 	defer os.Remove(oldFile.Name())
 
 	newFile, err := os.CreateTemp("", "rocq-diff-new-*")
 	if err != nil {
 		oldFile.Close()
-		log.Fatalf("diffText: create temp file: %v", err)
+		log.Fatalf("DiffText: create temp file: %v", err)
 	}
 	defer os.Remove(newFile.Name())
 
@@ -107,14 +106,14 @@ func diffText(old, new string) string {
 	out, _ := cmd.Output()
 	// git diff exits 1 when files differ, so ignore exit error.
 	if len(out) == 0 {
-		log.Fatal("diffText: git diff produced no output for differing inputs")
+		log.Fatal("DiffText: git diff produced no output for differing inputs")
 	}
 
-	return parseDiffHunks(string(out))
+	return ParseDiffHunks(string(out))
 }
 
-// parseDiffHunks extracts just the @@ hunk headers and +/- lines from git diff output.
-func parseDiffHunks(raw string) string {
+// ParseDiffHunks extracts just the @@ hunk headers and +/- lines from git diff output.
+func ParseDiffHunks(raw string) string {
 	var sb strings.Builder
 	for line := range strings.SplitSeq(raw, "\n") {
 		if strings.HasPrefix(line, "@@") || strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-") {
@@ -130,7 +129,6 @@ func parseDiffHunks(raw string) string {
 }
 
 // writeGoals writes all focused goals to the string builder.
-// Single goal: "Goal:\n<text>". Multiple goals: "Goal 1 of N:\n<text>\n\nGoal 2 of N:\n<text>".
 func writeGoals(sb *strings.Builder, goals []Goal) {
 	if len(goals) == 1 {
 		sb.WriteString("Goal:\n")
@@ -146,8 +144,8 @@ func writeGoals(sb *strings.Builder, goals []Goal) {
 	}
 }
 
-// formatFullResults formats the complete proof state without deltas.
-func formatFullResults(pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
+// FormatFullResults formats the complete proof state without deltas.
+func FormatFullResults(pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
 	var sb strings.Builder
 
 	if pv != nil {
@@ -167,17 +165,17 @@ func formatFullResults(pv *ProofView, diags []Diagnostic) *mcp.CallToolResult {
 		}
 	}
 
-	formatDiagnostics(&sb, diags)
+	FormatDiagnostics(&sb, diags)
 
 	if sb.Len() == 0 {
 		sb.WriteString("No goals or diagnostics.")
 	}
 
-	return textResult(sb.String())
+	return TextResult(sb.String())
 }
 
-// formatDiagnostics appends diagnostic output to a string builder.
-func formatDiagnostics(sb *strings.Builder, diags []Diagnostic) {
+// FormatDiagnostics appends diagnostic output to a string builder.
+func FormatDiagnostics(sb *strings.Builder, diags []Diagnostic) {
 	if len(diags) > 0 {
 		sb.WriteString("\n=== Diagnostics ===\n")
 		for _, d := range diags {
@@ -201,10 +199,8 @@ func formatDiagnostics(sb *strings.Builder, diags []Diagnostic) {
 	}
 }
 
-// parseProofView parses the vsrocq proofView notification params.
-// vsrocq uses Ppcmd (pretty-printer command) trees for goals and hypotheses.
-// All focused goals are pre-rendered to text.
-func parseProofView(params json.RawMessage) *ProofView {
+// ParseProofView parses the vsrocq proofView notification params.
+func ParseProofView(params json.RawMessage) *ProofView {
 	var raw struct {
 		Proof struct {
 			Goals          []rawGoal `json:"goals"`
@@ -226,12 +222,12 @@ func parseProofView(params json.RawMessage) *ProofView {
 	// Pre-render all focused goals.
 	for _, g := range raw.Proof.Goals {
 		id := strings.TrimSpace(string(g.ID))
-		conclusion := renderPpcmd(g.Goal)
+		conclusion := RenderPpcmd(g.Goal)
 		var hyps []string
 		for _, h := range g.Hypotheses {
-			hyps = append(hyps, renderPpcmd(h))
+			hyps = append(hyps, RenderPpcmd(h))
 		}
-		pv.Goals = append(pv.Goals, Goal{ID: id, Text: renderGoalText(hyps, conclusion)})
+		pv.Goals = append(pv.Goals, Goal{ID: id, Text: RenderGoalText(hyps, conclusion)})
 	}
 
 	for _, m := range raw.Messages {
@@ -241,14 +237,14 @@ func parseProofView(params json.RawMessage) *ProofView {
 			// Check if first element is a number (severity).
 			var severity int
 			if json.Unmarshal(pair[0], &severity) == nil {
-				text := renderPpcmd(pair[1])
+				text := RenderPpcmd(pair[1])
 				if text != "" {
 					pv.Messages = append(pv.Messages, text)
 				}
 				continue
 			}
 		}
-		text := renderPpcmd(m)
+		text := RenderPpcmd(m)
 		if text != "" {
 			pv.Messages = append(pv.Messages, text)
 		}
@@ -257,7 +253,7 @@ func parseProofView(params json.RawMessage) *ProofView {
 		// pp_messages items are [severity, ppcmd_tree]
 		var pair []json.RawMessage
 		if json.Unmarshal(m, &pair) == nil && len(pair) >= 2 {
-			text := renderPpcmd(pair[1])
+			text := RenderPpcmd(pair[1])
 			if text != "" {
 				pv.Messages = append(pv.Messages, text)
 			}
@@ -272,9 +268,8 @@ type rawGoal struct {
 	Hypotheses []json.RawMessage `json:"hypotheses"`
 }
 
-// renderPpcmd renders a vsrocq Ppcmd tree to plain text.
-// Ppcmd format: ["Ppcmd_string", "text"], ["Ppcmd_glue", [...]], etc.
-func renderPpcmd(raw json.RawMessage) string {
+// RenderPpcmd renders a vsrocq Ppcmd tree to plain text.
+func RenderPpcmd(raw json.RawMessage) string {
 	// Try as plain string first.
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
@@ -305,23 +300,20 @@ func renderPpcmd(raw json.RawMessage) string {
 			if json.Unmarshal(arr[1], &children) == nil {
 				var sb strings.Builder
 				for _, child := range children {
-					sb.WriteString(renderPpcmd(child))
+					sb.WriteString(RenderPpcmd(child))
 				}
 				return sb.String()
 			}
 		}
 	case "Ppcmd_box":
-		// ["Ppcmd_box", boxtype, content]
 		if len(arr) > 2 {
-			return renderPpcmd(arr[2])
+			return RenderPpcmd(arr[2])
 		}
 	case "Ppcmd_tag":
-		// ["Ppcmd_tag", tagname, content]
 		if len(arr) > 2 {
-			return renderPpcmd(arr[2])
+			return RenderPpcmd(arr[2])
 		}
 	case "Ppcmd_print_break":
-		// ["Ppcmd_print_break", nspaces, offset]
 		if len(arr) > 1 {
 			var n int
 			json.Unmarshal(arr[1], &n)
@@ -338,4 +330,23 @@ func renderPpcmd(raw json.RawMessage) string {
 		}
 	}
 	return ""
+}
+
+// TextResult wraps a string in an MCP CallToolResult.
+func TextResult(text string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: text},
+		},
+	}
+}
+
+// ErrResult wraps an error in an MCP CallToolResult.
+func ErrResult(err error) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		IsError: true,
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: err.Error()},
+		},
+	}
 }

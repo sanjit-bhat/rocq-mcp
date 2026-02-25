@@ -1,4 +1,4 @@
-package main
+package rocq
 
 import (
 	"bytes"
@@ -76,7 +76,6 @@ func TestCodecIDIncrement(t *testing.T) {
 }
 
 func TestDecodeContentLengthFraming(t *testing.T) {
-	// Manually construct a framed message.
 	body := `{"jsonrpc":"2.0","method":"test"}`
 	framed := "Content-Length: " + itoa(len(body)) + "\r\n\r\n" + body
 
