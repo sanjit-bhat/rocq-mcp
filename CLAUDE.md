@@ -7,6 +7,7 @@ rules:
 - clone exploratory code into `/tmp`.
 i've given permission for you to read that dir.
 - commit checkpoints. write concise, descriptive commits.
+  add yourself as a co-author.
 - write commit messages to a fresh random file in `/tmp`,
   then run `git commit -F {file_path}`.
   this avoids multi-line shell quoting issues with the `Bash(git *)` permission pattern.
