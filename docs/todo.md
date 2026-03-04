@@ -7,3 +7,4 @@ TODOs:
 [ ] update readme to explicitly mention goal diff'ing feature.
     this is an important optimization for LLM context management,
     and there's probably lots of room for improvement.
+[ ] replace Claude permissions system with sandbox.
