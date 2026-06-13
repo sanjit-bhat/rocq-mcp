@@ -4,7 +4,7 @@ package vsrocq
 
 import "encoding/json"
 
-// ---- LSP base types ---------------------------------------------------------
+// LSP base types
 
 // Position is a zero-based line and character offset.
 type Position struct {
@@ -71,7 +71,7 @@ type PublishDiagnosticsParams struct {
 	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
-// ---- LSP initialize ---------------------------------------------------------
+// LSP initialize
 
 // ClientCapabilities is intentionally minimal; vsrocq doesn't require specifics.
 type ClientCapabilities struct{}
@@ -95,7 +95,7 @@ type ServerCapabilities struct {
 	CompletionProvider json.RawMessage `json:"completionProvider,omitempty"`
 }
 
-// ---- vsrocq initialization options -----------------------------------------
+// vsrocq initialization options
 
 // InitOptions mirrors vsrocq's initializationOptions schema.
 type InitOptions struct {
@@ -199,13 +199,13 @@ func DefaultInitOptions() *InitOptions {
 	}
 }
 
-// ---- vsrocq custom pp type --------------------------------------------------
+// vsrocq custom pp type
 
 // Pp is a structured pretty-print command (Rocq Ppcmd).
 // It is represented as a JSON tagged union: ["Ppcmd_string", "text"] etc.
 type Pp = json.RawMessage
 
-// ---- vsrocq server notifications --------------------------------------------
+// vsrocq server notifications
 
 // HighlightsParams is the payload of prover/updateHighlights.
 type HighlightsParams struct {
@@ -289,7 +289,7 @@ type LogMessageParams struct {
 	Message string `json:"message"`
 }
 
-// ---- vsrocq custom request params / results ---------------------------------
+// vsrocq custom request params / results
 
 // InterpretToPointParams is the params for prover/interpretToPoint (notification).
 type InterpretToPointParams struct {

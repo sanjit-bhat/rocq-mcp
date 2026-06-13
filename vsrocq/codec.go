@@ -7,7 +7,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 // readLSPFrame reads one Content-Length framed LSP message from r.
@@ -41,22 +40,18 @@ func readLSPFrame(r *bufio.Reader) ([]byte, error) {
 	return body, nil
 }
 
-// lspWriter is a thread-safe io.Writer that adds Content-Length framing.
+// lspWriter is an io.Writer that adds Content-Length framing.
 //
 // go-ethereum's codec writes complete JSON messages, each followed by '\n', in a
 // single Write call.  lspWriter strips that trailing '\n', rewrites go-ethereum's
 // positional array params ([{...}]) to LSP's named-params object ({...}), and
 // wraps the body with the standard LSP Content-Length header.
 type lspWriter struct {
-	mu sync.Mutex
-	w  io.Writer
+	w io.Writer
 }
 
-// WriteMessage writes body with LSP Content-Length framing.
-func (w *lspWriter) WriteMessage(body []byte) error {
+func (w *lspWriter) writeMessage(body []byte) error {
 	header := fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body))
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	if _, err := io.WriteString(w.w, header); err != nil {
 		return err
 	}
@@ -74,7 +69,7 @@ func (w *lspWriter) Write(p []byte) (n int, err error) {
 		return len(p), nil
 	}
 	body = unwrapArrayParams(body)
-	return len(p), w.WriteMessage(body)
+	return len(p), w.writeMessage(body)
 }
 
 // unwrapArrayParams rewrites {"params":[{...}]} → {"params":{...}}.
