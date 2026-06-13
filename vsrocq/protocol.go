@@ -1,0 +1,438 @@
+// Package vsrocq provides a Go client for the vsrocq LSP server.
+// Protocol reference: https://github.com/rocq-prover/vsrocq
+package vsrocq
+
+import "encoding/json"
+
+// ---- JSON-RPC 2.0 wire types ------------------------------------------------
+
+type request struct {
+	JSONRPC string `json:"jsonrpc"`
+	ID      int    `json:"id"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
+}
+
+type notification struct {
+	JSONRPC string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
+}
+
+type response struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      *int            `json:"id"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *ResponseError  `json:"error,omitempty"`
+}
+
+// ResponseError is a JSON-RPC error object.
+type ResponseError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e *ResponseError) Error() string { return e.Message }
+
+// incomingMsg is used to detect whether a message is a request, response, or notification.
+type incomingMsg struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      *int            `json:"id"`
+	Method  string          `json:"method,omitempty"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *ResponseError  `json:"error,omitempty"`
+}
+
+// ---- LSP base types ---------------------------------------------------------
+
+// Position is a zero-based line and character offset.
+type Position struct {
+	Line      int `json:"line"`
+	Character int `json:"character"`
+}
+
+// Range is a start/end pair of positions.
+type Range struct {
+	Start Position `json:"start"`
+	End   Position `json:"end"`
+}
+
+// TextDocumentIdentifier identifies a document by URI.
+type TextDocumentIdentifier struct {
+	URI string `json:"uri"`
+}
+
+// VersionedTextDocumentIdentifier adds a version number.
+type VersionedTextDocumentIdentifier struct {
+	URI     string `json:"uri"`
+	Version int    `json:"version"`
+}
+
+// TextDocumentItem is a document opened via textDocument/didOpen.
+type TextDocumentItem struct {
+	URI        string `json:"uri"`
+	LanguageID string `json:"languageId"`
+	Version    int    `json:"version"`
+	Text       string `json:"text"`
+}
+
+// DidOpenTextDocumentParams is the params for textDocument/didOpen.
+type DidOpenTextDocumentParams struct {
+	TextDocument TextDocumentItem `json:"textDocument"`
+}
+
+// TextDocumentContentChangeEvent is a change event for textDocument/didChange.
+type TextDocumentContentChangeEvent struct {
+	Text string `json:"text"`
+}
+
+// DidChangeTextDocumentParams is the params for textDocument/didChange.
+type DidChangeTextDocumentParams struct {
+	TextDocument   VersionedTextDocumentIdentifier   `json:"textDocument"`
+	ContentChanges []TextDocumentContentChangeEvent  `json:"contentChanges"`
+}
+
+// DidCloseTextDocumentParams is the params for textDocument/didClose.
+type DidCloseTextDocumentParams struct {
+	TextDocument TextDocumentIdentifier `json:"textDocument"`
+}
+
+// Diagnostic represents a language diagnostic.
+type Diagnostic struct {
+	Range    Range  `json:"range"`
+	Severity int    `json:"severity,omitempty"`
+	Message  string `json:"message"`
+}
+
+// PublishDiagnosticsParams is the params for textDocument/publishDiagnostics.
+type PublishDiagnosticsParams struct {
+	URI         string       `json:"uri"`
+	Diagnostics []Diagnostic `json:"diagnostics"`
+}
+
+// ---- LSP initialize ---------------------------------------------------------
+
+// ClientCapabilities is intentionally minimal; vsrocq doesn't require specifics.
+type ClientCapabilities struct{}
+
+// InitializeParams is the params for the initialize request.
+type InitializeParams struct {
+	ProcessID             int                 `json:"processId"`
+	RootURI               string              `json:"rootUri"`
+	Capabilities          ClientCapabilities  `json:"capabilities"`
+	InitializationOptions *InitOptions        `json:"initializationOptions,omitempty"`
+}
+
+// InitializeResult is the result of initialize.
+type InitializeResult struct {
+	Capabilities ServerCapabilities `json:"capabilities"`
+}
+
+// ServerCapabilities is a partial view of what vsrocq advertises.
+type ServerCapabilities struct {
+	TextDocumentSync   json.RawMessage `json:"textDocumentSync,omitempty"`
+	CompletionProvider json.RawMessage `json:"completionProvider,omitempty"`
+}
+
+// ---- vsrocq initialization options -----------------------------------------
+
+// InitOptions mirrors vsrocq's initializationOptions schema.
+type InitOptions struct {
+	Proof       ProofOptions       `json:"proof"`
+	Goals       GoalsOptions       `json:"goals"`
+	Completion  CompletionOptions  `json:"completion"`
+	Diagnostics DiagnosticsOptions `json:"diagnostics"`
+	Memory      MemoryOptions      `json:"memory"`
+	Interrupt   InterruptOptions   `json:"interrupt"`
+}
+
+// ProofMode is 0=Manual, 1=Continuous.
+type ProofMode int
+
+const (
+	ProofModeManual     ProofMode = 0
+	ProofModeContinuous ProofMode = 1
+)
+
+// PointInterpretationMode is 0=Cursor, 1=NextCommand.
+type PointInterpretationMode int
+
+const (
+	PointInterpretationCursor      PointInterpretationMode = 0
+	PointInterpretationNextCommand PointInterpretationMode = 1
+)
+
+// ProofOptions configures proof checking behaviour.
+type ProofOptions struct {
+	Delegation              string                  `json:"delegation"`
+	Workers                 *int                    `json:"workers"`
+	Mode                    ProofMode               `json:"mode"`
+	Block                   bool                    `json:"block"`
+	PointInterpretationMode PointInterpretationMode `json:"pointInterpretationMode"`
+}
+
+// GoalsOptions configures goal display.
+type GoalsOptions struct {
+	Diff     DiffOptions     `json:"diff"`
+	Messages MessagesOptions `json:"messages"`
+}
+
+// DiffOptions sets goal diff mode.
+type DiffOptions struct {
+	Mode string `json:"mode"` // "off" | "on" | "removed"
+}
+
+// MessagesOptions sets whether full messages are shown.
+type MessagesOptions struct {
+	Full bool `json:"full"`
+}
+
+// CompletionOptions configures completion.
+type CompletionOptions struct {
+	Enable           bool    `json:"enable"`
+	Algorithm        int     `json:"algorithm"`
+	UnificationLimit int     `json:"unificationLimit"`
+	AtomicFactor     float64 `json:"atomicFactor"`
+	SizeFactor       float64 `json:"sizeFactor"`
+}
+
+// DiagnosticsOptions configures diagnostics.
+type DiagnosticsOptions struct {
+	Enable bool `json:"enable"`
+	Full   bool `json:"full"`
+}
+
+// MemoryOptions configures memory limits.
+type MemoryOptions struct {
+	Limit int `json:"limit"`
+}
+
+// InterruptOptions configures interruption behaviour.
+type InterruptOptions struct {
+	Preempt bool `json:"preempt"`
+}
+
+// DefaultInitOptions returns safe defaults for vsrocq.
+func DefaultInitOptions() *InitOptions {
+	return &InitOptions{
+		Proof: ProofOptions{
+			Delegation:              "None",
+			Mode:                    ProofModeContinuous,
+			Block:                   false,
+			PointInterpretationMode: PointInterpretationCursor,
+		},
+		Goals: GoalsOptions{
+			Diff:     DiffOptions{Mode: "off"},
+			Messages: MessagesOptions{Full: false},
+		},
+		Completion: CompletionOptions{
+			Enable:           false,
+			Algorithm:        0,
+			UnificationLimit: 1000,
+			AtomicFactor:     5.0,
+			SizeFactor:       5.0,
+		},
+		Diagnostics: DiagnosticsOptions{Enable: true, Full: false},
+		Memory:      MemoryOptions{Limit: 4},
+		Interrupt:   InterruptOptions{Preempt: false},
+	}
+}
+
+// ---- vsrocq custom pp type --------------------------------------------------
+
+// Pp is a structured pretty-print command (Rocq Ppcmd).
+// It is represented as a JSON tagged union: ["Ppcmd_string", "text"] etc.
+type Pp = json.RawMessage
+
+// ---- vsrocq server notifications --------------------------------------------
+
+// HighlightsParams is the payload of prover/updateHighlights.
+type HighlightsParams struct {
+	URI             string  `json:"uri"`
+	PreparedRange   []Range `json:"preparedRange"`
+	ProcessingRange []Range `json:"processingRange"`
+	ProcessedRange  []Range `json:"processedRange"`
+}
+
+// MoveCursorParams is the payload of prover/moveCursor.
+type MoveCursorParams struct {
+	URI   string `json:"uri"`
+	Range Range  `json:"range"`
+}
+
+// BlockOnErrorParams is the payload of prover/blockOnError.
+type BlockOnErrorParams struct {
+	URI   string `json:"uri"`
+	Range Range  `json:"range"`
+}
+
+// Goal is a single proof goal with hypotheses (Pp format).
+type Goal struct {
+	ID           int  `json:"id"`
+	Name         *string `json:"name,omitempty"`
+	Hypotheses   []Pp `json:"hypotheses"`
+	Goal         Pp   `json:"goal"`
+}
+
+// ProofState groups goals by category.
+type ProofState struct {
+	Goals         []Goal `json:"goals"`
+	ShelvedGoals  []Goal `json:"shelvedGoals"`
+	GivenUpGoals  []Goal `json:"givenUpGoals"`
+	UnfocusedGoals []Goal `json:"unfocusedGoals"`
+}
+
+// ProofViewMessage is a (severity, pp) pair in a ProofView notification.
+// On the wire it serialises as a 2-element JSON array.
+type ProofViewMessage struct {
+	Severity int // 1=Error 2=Warning 3=Info 4=Hint
+	Text     Pp
+}
+
+func (m *ProofViewMessage) UnmarshalJSON(b []byte) error {
+	var raw [2]json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	var sev int
+	if err := json.Unmarshal(raw[0], &sev); err != nil {
+		return err
+	}
+	m.Severity = sev
+	m.Text = raw[1]
+	return nil
+}
+
+func (m ProofViewMessage) MarshalJSON() ([]byte, error) {
+	return json.Marshal([2]any{m.Severity, m.Text})
+}
+
+// ProofViewParams is the payload of prover/proofView.
+type ProofViewParams struct {
+	Range      Range              `json:"range"`
+	Proof      *ProofState        `json:"proof"`
+	Messages   []ProofViewMessage `json:"messages"`
+	PPProof    json.RawMessage    `json:"pp_proof,omitempty"`
+	PPMessages []json.RawMessage  `json:"pp_messages,omitempty"`
+}
+
+// SearchResult is a single result from prover/searchResult.
+type SearchResult struct {
+	ID        string `json:"id"`
+	Name      Pp     `json:"name"`
+	Statement Pp     `json:"statement"`
+}
+
+// LogMessageParams is the payload of prover/debugMessage.
+type LogMessageParams struct {
+	Message string `json:"message"`
+}
+
+// ---- vsrocq custom request params / results ---------------------------------
+
+// InterpretToPointParams is the params for prover/interpretToPoint (notification).
+type InterpretToPointParams struct {
+	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
+	Position     Position                        `json:"position"`
+}
+
+// InterpretToEndParams is the params for prover/interpretToEnd (notification).
+type InterpretToEndParams struct {
+	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
+}
+
+// StepForwardParams is the params for prover/stepForward (notification).
+type StepForwardParams struct {
+	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
+}
+
+// StepBackwardParams is the params for prover/stepBackward (notification).
+type StepBackwardParams struct {
+	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
+}
+
+// InterruptParams is the params for prover/interrupt (notification).
+type InterruptParams struct {
+	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
+}
+
+// ResetParams is the params for prover/resetRocq (request).
+type ResetParams struct {
+	TextDocument TextDocumentIdentifier `json:"textDocument"`
+}
+
+// SearchParams is the params for prover/search (request).
+type SearchParams struct {
+	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
+	Position     Position                        `json:"position"`
+	Pattern      string                          `json:"pattern"`
+	ID           string                          `json:"id"`
+}
+
+// AboutParams is the params for prover/about (request).
+type AboutParams struct {
+	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
+	Position     Position                        `json:"position"`
+	Pattern      string                          `json:"pattern"`
+}
+
+// CheckParams is the params for prover/check (request).
+type CheckParams struct {
+	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
+	Position     Position                        `json:"position"`
+	Pattern      string                          `json:"pattern"`
+}
+
+// LocateParams is the params for prover/locate (request).
+type LocateParams struct {
+	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
+	Position     Position                        `json:"position"`
+	Pattern      string                          `json:"pattern"`
+}
+
+// PrintParams is the params for prover/print (request).
+type PrintParams struct {
+	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
+	Position     Position                        `json:"position"`
+	Pattern      string                          `json:"pattern"`
+}
+
+// DocumentStateParams is the params for prover/documentState (request).
+type DocumentStateParams struct {
+	TextDocument TextDocumentIdentifier `json:"textDocument"`
+}
+
+// DocumentStateResult is the result of prover/documentState.
+type DocumentStateResult struct {
+	Document string `json:"document"`
+}
+
+// DocumentProofsParams is the params for prover/documentProofs (request).
+type DocumentProofsParams struct {
+	TextDocument TextDocumentIdentifier `json:"textDocument"`
+}
+
+// ProofStatement describes the statement of a proof.
+type ProofStatement struct {
+	Statement string `json:"statement"`
+	Range     Range  `json:"range"`
+}
+
+// ProofStep describes one tactic step.
+type ProofStep struct {
+	Tactic string `json:"tactic"`
+	Range  Range  `json:"range"`
+}
+
+// ProofBlock groups a statement with its steps.
+type ProofBlock struct {
+	Statement ProofStatement `json:"statement"`
+	Range     Range          `json:"range"`
+	Steps     []ProofStep    `json:"steps"`
+}
+
+// DocumentProofsResult is the result of prover/documentProofs.
+type DocumentProofsResult struct {
+	Proofs []ProofBlock `json:"proofs"`
+}
