@@ -4,46 +4,6 @@ package vsrocq
 
 import "encoding/json"
 
-// ---- JSON-RPC 2.0 wire types ------------------------------------------------
-
-type request struct {
-	JSONRPC string `json:"jsonrpc"`
-	ID      int    `json:"id"`
-	Method  string `json:"method"`
-	Params  any    `json:"params,omitempty"`
-}
-
-type notification struct {
-	JSONRPC string `json:"jsonrpc"`
-	Method  string `json:"method"`
-	Params  any    `json:"params,omitempty"`
-}
-
-type response struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      *int            `json:"id"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *ResponseError  `json:"error,omitempty"`
-}
-
-// ResponseError is a JSON-RPC error object.
-type ResponseError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-func (e *ResponseError) Error() string { return e.Message }
-
-// incomingMsg is used to detect whether a message is a request, response, or notification.
-type incomingMsg struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      *int            `json:"id"`
-	Method  string          `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *ResponseError  `json:"error,omitempty"`
-}
-
 // ---- LSP base types ---------------------------------------------------------
 
 // Position is a zero-based line and character offset.
