@@ -7,10 +7,10 @@ graph TD
     subgraph GoProcess["Go process"]
         Caller["caller goroutine\nc.DidOpen / CallContext / …"]
         subgraph Client["vsrocq.Client"]
-            RPC["go-ethereum rpc.Client\n(CallContext, response correlation,\ncontext cancellation)"]
-            Writer["lspWriter\n• mutex-protected\n• strips trailing newline\n• unwraps [{}] → {} params\n• prepends Content-Length header"]
+            RPC["go-ethereum rpc.Client\n(CallContext, Notify, response correlation,\ncontext cancellation)"]
+            Writer["lspWriter\n• strips trailing newline\n• unwraps [{}] → {} params\n• prepends Content-Length header"]
             ReadLoop["readLoop goroutine\n(dedicated, single reader)"]
-            Handlers["notification callbacks\nOnHighlights / OnDiagnostics\nOnProofView / …"]
+            Handlers["notification channels\nHighlights / Diagnostics\nProofView / … (buffered, closed on exit)"]
         end
     end
 
@@ -33,7 +33,7 @@ graph TD
     Pipe -->|"json.Decoder.Decode"| RPC
     RPC -->|"unmarshal result, unblock caller"| Caller
 
-    ReadLoop -->|"notification (method, no id)"| Handlers
+    ReadLoop -->|"notification (method, no id)\nnon-blocking send"| Handlers
 ```
 
 ## Request / response flow
@@ -65,13 +65,13 @@ sequenceDiagram
 sequenceDiagram
     participant vsrocqtop
     participant readLoop
-    participant Callbacks
+    participant Channels
 
     vsrocqtop->>readLoop: Content-Length: N\r\n\r\n{"method":"prover/updateHighlights","params":{…}}
     readLoop->>readLoop: readLSPFrame → peek: method set, id nil → notification
-    readLoop->>Callbacks: handleNotification("prover/updateHighlights", body)
-    Callbacks->>Callbacks: json.Unmarshal params → HighlightsParams
-    Callbacks->>Callbacks: c.OnHighlights(&p)
+    readLoop->>Channels: handleNotification("prover/updateHighlights", body)
+    Channels->>Channels: json.Unmarshal params → HighlightsParams
+    Channels->>Channels: select { case c.Highlights <- &p: default: }
 ```
 
 ## Key design notes
@@ -83,6 +83,6 @@ sequenceDiagram
 | LSP Content-Length framing | `readLSPFrame` (read side) + `lspWriter` (write side) |
 | Params format mismatch | `unwrapArrayParams`: go-ethereum serialises args as `[{…}]`; lspWriter rewrites to `{…}` before sending |
 | Notification dispatch | `readLoop` classifies by `(method≠"", id==nil)` and calls handlers directly; responses go to the pipe |
-| Thread safety | `lspWriter.mu` serialises all stdin writes (both `rpc.Client` requests and `notify()` calls) |
-| Fire-and-forget notifications | `notify()` marshals and calls `lspWriter.WriteMessage` directly — does not go through `rpc.Client` |
+| Thread safety | `go-ethereum/rpc.Client` serialises all stdin writes internally; no mutex needed in `lspWriter` |
+| Fire-and-forget notifications | `notify()` calls `rpc.Client.Notify()` — goes through the same codec path as requests |
 | `workers: int option` invariant | `ProofOptions.Workers *int` has no `omitempty`; Go sends `null` which OCaml decodes as `None` |
