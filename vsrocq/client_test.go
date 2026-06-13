@@ -86,7 +86,27 @@ func waitFor(t *testing.T, timeout time.Duration, pred func() bool) bool {
 	return false
 }
 
-// ---- TestInitialize ---------------------------------------------------------
+// waitProcessed drains c.Highlights until a notification with a non-empty
+// ProcessedRange arrives, or the timeout fires.
+func waitProcessed(t *testing.T, c *vsrocq.Client, timeout time.Duration) {
+	t.Helper()
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	for {
+		select {
+		case h, ok := <-c.Highlights:
+			if !ok {
+				t.Fatal("Highlights channel closed before processing completed")
+				return
+			}
+			if len(h.ProcessedRange) > 0 {
+				return
+			}
+		case <-deadline.C:
+			t.Fatal("timed out waiting for highlights with non-empty ProcessedRange")
+		}
+	}
+}
 
 func TestInitialize(t *testing.T) {
 	bin := vsrocqBin(t)
@@ -112,8 +132,6 @@ func TestInitialize(t *testing.T) {
 		t.Fatalf("Shutdown: %v", err)
 	}
 }
-
-// ---- TestInitializeWithOptions ----------------------------------------------
 
 func TestInitializeWithOptions(t *testing.T) {
 	workers := 2
@@ -144,8 +162,6 @@ func TestInitializeWithOptions(t *testing.T) {
 	_ = c // just verify no crash
 }
 
-// ---- TestShutdownClean ------------------------------------------------------
-
 func TestShutdownClean(t *testing.T) {
 	bin := vsrocqBin(t)
 	dir := t.TempDir()
@@ -165,8 +181,6 @@ func TestShutdownClean(t *testing.T) {
 	}
 }
 
-// ---- TestDidOpenClose -------------------------------------------------------
-
 func TestDidOpenClose(t *testing.T) {
 	c, dir := newClient(t, nil)
 	uri := writeRocqFile(t, dir, "hello.v", "Definition x := 1.\n")
@@ -178,8 +192,6 @@ func TestDidOpenClose(t *testing.T) {
 		t.Fatalf("DidClose: %v", err)
 	}
 }
-
-// ---- TestDidChange ----------------------------------------------------------
 
 func TestDidChange(t *testing.T) {
 	c, dir := newClient(t, nil)
@@ -198,18 +210,8 @@ func TestDidChange(t *testing.T) {
 	}
 }
 
-// ---- TestHighlightsNotification ---------------------------------------------
-
 func TestHighlightsNotification(t *testing.T) {
 	c, dir := newClient(t, nil)
-
-	var mu sync.Mutex
-	var highlights []*vsrocq.HighlightsParams
-	c.OnHighlights = func(p *vsrocq.HighlightsParams) {
-		mu.Lock()
-		highlights = append(highlights, p)
-		mu.Unlock()
-	}
 
 	content := "Definition foo := True.\n"
 	uri := writeRocqFile(t, dir, "hl.v", content)
@@ -221,35 +223,18 @@ func TestHighlightsNotification(t *testing.T) {
 		t.Fatalf("InterpretToEnd: %v", err)
 	}
 
-	got := waitFor(t, 15*time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(highlights) > 0
-	})
-	if !got {
+	select {
+	case h := <-c.Highlights:
+		if h.URI == "" {
+			t.Error("highlight URI is empty")
+		}
+	case <-time.After(15 * time.Second):
 		t.Fatal("timed out waiting for prover/updateHighlights")
-	}
-
-	mu.Lock()
-	h := highlights[len(highlights)-1]
-	mu.Unlock()
-	if h.URI == "" {
-		t.Error("highlight URI is empty")
 	}
 }
 
-// ---- TestDiagnosticsOnError -------------------------------------------------
-
 func TestDiagnosticsOnError(t *testing.T) {
 	c, dir := newClient(t, nil)
-
-	var mu sync.Mutex
-	var diags []*vsrocq.PublishDiagnosticsParams
-	c.OnDiagnostics = func(p *vsrocq.PublishDiagnosticsParams) {
-		mu.Lock()
-		diags = append(diags, p)
-		mu.Unlock()
-	}
 
 	// This file has a deliberate error (undefined zar).
 	content := "Definition bad := zar.\n"
@@ -262,33 +247,22 @@ func TestDiagnosticsOnError(t *testing.T) {
 		t.Fatalf("InterpretToEnd: %v", err)
 	}
 
-	got := waitFor(t, 15*time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		for _, d := range diags {
+	deadline := time.NewTimer(15 * time.Second)
+	defer deadline.Stop()
+	for {
+		select {
+		case d := <-c.Diagnostics:
 			if len(d.Diagnostics) > 0 {
-				return true
+				return
 			}
+		case <-deadline.C:
+			t.Fatal("timed out waiting for error diagnostics")
 		}
-		return false
-	})
-	if !got {
-		t.Fatal("timed out waiting for error diagnostics")
 	}
 }
 
-// ---- TestInterpretToPoint ---------------------------------------------------
-
 func TestInterpretToPoint(t *testing.T) {
 	c, dir := newClient(t, nil)
-
-	var mu sync.Mutex
-	var gotHighlight bool
-	c.OnHighlights = func(p *vsrocq.HighlightsParams) {
-		mu.Lock()
-		gotHighlight = true
-		mu.Unlock()
-	}
 
 	content := "Definition a := 1.\nDefinition b := 2.\n"
 	uri := writeRocqFile(t, dir, "itp.v", content)
@@ -301,16 +275,12 @@ func TestInterpretToPoint(t *testing.T) {
 		t.Fatalf("InterpretToPoint: %v", err)
 	}
 
-	if !waitFor(t, 15*time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return gotHighlight
-	}) {
+	select {
+	case <-c.Highlights:
+	case <-time.After(15 * time.Second):
 		t.Fatal("timed out waiting for highlights after InterpretToPoint")
 	}
 }
-
-// ---- TestStepForwardBackward ------------------------------------------------
 
 func TestStepForwardBackward(t *testing.T) {
 	opts := vsrocq.DefaultInitOptions()
@@ -331,8 +301,6 @@ func TestStepForwardBackward(t *testing.T) {
 	}
 }
 
-// ---- TestInterrupt ----------------------------------------------------------
-
 func TestInterrupt(t *testing.T) {
 	c, dir := newClient(t, nil)
 	content := "Definition x := 1.\n"
@@ -346,8 +314,6 @@ func TestInterrupt(t *testing.T) {
 		t.Fatalf("Interrupt: %v", err)
 	}
 }
-
-// ---- TestResetRocq ----------------------------------------------------------
 
 func TestResetRocq(t *testing.T) {
 	c, dir := newClient(t, nil)
@@ -363,8 +329,6 @@ func TestResetRocq(t *testing.T) {
 		t.Fatalf("ResetRocq: %v", err)
 	}
 }
-
-// ---- TestDocumentState ------------------------------------------------------
 
 func TestDocumentState(t *testing.T) {
 	c, dir := newClient(t, nil)
@@ -387,8 +351,6 @@ func TestDocumentState(t *testing.T) {
 	}
 }
 
-// ---- TestDocumentProofs -----------------------------------------------------
-
 func TestDocumentProofs(t *testing.T) {
 	c, dir := newClient(t, nil)
 	content := `Lemma simple : True.
@@ -401,25 +363,10 @@ Qed.
 	if err := c.DidOpen(uri, "rocq", content, 1); err != nil {
 		t.Fatalf("DidOpen: %v", err)
 	}
-
-	// Wait for document to be processed.
-	var mu sync.Mutex
-	var processed bool
-	c.OnHighlights = func(p *vsrocq.HighlightsParams) {
-		mu.Lock()
-		if len(p.ProcessedRange) > 0 {
-			processed = true
-		}
-		mu.Unlock()
-	}
 	if err := c.InterpretToEnd(uri, 1); err != nil {
 		t.Fatalf("InterpretToEnd: %v", err)
 	}
-	waitFor(t, 20*time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return processed
-	})
+	waitProcessed(t, c, 20*time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -437,8 +384,6 @@ Qed.
 	}
 }
 
-// ---- TestAbout --------------------------------------------------------------
-
 func TestAbout(t *testing.T) {
 	c, dir := newClient(t, nil)
 	content := "Definition x := 1.\n"
@@ -447,24 +392,10 @@ func TestAbout(t *testing.T) {
 	if err := c.DidOpen(uri, "rocq", content, 1); err != nil {
 		t.Fatalf("DidOpen: %v", err)
 	}
-	// Wait for processing.
-	var mu sync.Mutex
-	var ready bool
-	c.OnHighlights = func(p *vsrocq.HighlightsParams) {
-		mu.Lock()
-		if len(p.ProcessedRange) > 0 {
-			ready = true
-		}
-		mu.Unlock()
-	}
 	if err := c.InterpretToEnd(uri, 1); err != nil {
 		t.Fatalf("InterpretToEnd: %v", err)
 	}
-	waitFor(t, 20*time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return ready
-	})
+	waitProcessed(t, c, 20*time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -478,8 +409,6 @@ func TestAbout(t *testing.T) {
 	}
 }
 
-// ---- TestCheck --------------------------------------------------------------
-
 func TestCheck(t *testing.T) {
 	c, dir := newClient(t, nil)
 	content := "Definition x := 1.\n"
@@ -488,23 +417,10 @@ func TestCheck(t *testing.T) {
 	if err := c.DidOpen(uri, "rocq", content, 1); err != nil {
 		t.Fatalf("DidOpen: %v", err)
 	}
-	var mu sync.Mutex
-	var ready bool
-	c.OnHighlights = func(p *vsrocq.HighlightsParams) {
-		mu.Lock()
-		if len(p.ProcessedRange) > 0 {
-			ready = true
-		}
-		mu.Unlock()
-	}
 	if err := c.InterpretToEnd(uri, 1); err != nil {
 		t.Fatalf("InterpretToEnd: %v", err)
 	}
-	waitFor(t, 20*time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return ready
-	})
+	waitProcessed(t, c, 20*time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -518,8 +434,6 @@ func TestCheck(t *testing.T) {
 	}
 }
 
-// ---- TestLocate -------------------------------------------------------------
-
 func TestLocate(t *testing.T) {
 	c, dir := newClient(t, nil)
 	content := "Definition x := 1.\n"
@@ -528,23 +442,10 @@ func TestLocate(t *testing.T) {
 	if err := c.DidOpen(uri, "rocq", content, 1); err != nil {
 		t.Fatalf("DidOpen: %v", err)
 	}
-	var mu sync.Mutex
-	var ready bool
-	c.OnHighlights = func(p *vsrocq.HighlightsParams) {
-		mu.Lock()
-		if len(p.ProcessedRange) > 0 {
-			ready = true
-		}
-		mu.Unlock()
-	}
 	if err := c.InterpretToEnd(uri, 1); err != nil {
 		t.Fatalf("InterpretToEnd: %v", err)
 	}
-	waitFor(t, 20*time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return ready
-	})
+	waitProcessed(t, c, 20*time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -558,8 +459,6 @@ func TestLocate(t *testing.T) {
 	}
 }
 
-// ---- TestPrint --------------------------------------------------------------
-
 func TestPrint(t *testing.T) {
 	c, dir := newClient(t, nil)
 	content := "Definition x := 1.\n"
@@ -568,23 +467,10 @@ func TestPrint(t *testing.T) {
 	if err := c.DidOpen(uri, "rocq", content, 1); err != nil {
 		t.Fatalf("DidOpen: %v", err)
 	}
-	var mu sync.Mutex
-	var ready bool
-	c.OnHighlights = func(p *vsrocq.HighlightsParams) {
-		mu.Lock()
-		if len(p.ProcessedRange) > 0 {
-			ready = true
-		}
-		mu.Unlock()
-	}
 	if err := c.InterpretToEnd(uri, 1); err != nil {
 		t.Fatalf("InterpretToEnd: %v", err)
 	}
-	waitFor(t, 20*time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return ready
-	})
+	waitProcessed(t, c, 20*time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -598,29 +484,10 @@ func TestPrint(t *testing.T) {
 	}
 }
 
-// ---- TestSearch -------------------------------------------------------------
-
 func TestSearch(t *testing.T) {
 	c, dir := newClient(t, nil)
 	content := "Definition x := 1.\n"
 	uri := writeRocqFile(t, dir, "search.v", content)
-
-	var mu sync.Mutex
-	var results []*vsrocq.SearchResult
-	c.OnSearchResult = func(r *vsrocq.SearchResult) {
-		mu.Lock()
-		results = append(results, r)
-		mu.Unlock()
-	}
-
-	var ready bool
-	c.OnHighlights = func(p *vsrocq.HighlightsParams) {
-		mu.Lock()
-		if len(p.ProcessedRange) > 0 {
-			ready = true
-		}
-		mu.Unlock()
-	}
 
 	if err := c.DidOpen(uri, "rocq", content, 1); err != nil {
 		t.Fatalf("DidOpen: %v", err)
@@ -628,11 +495,7 @@ func TestSearch(t *testing.T) {
 	if err := c.InterpretToEnd(uri, 1); err != nil {
 		t.Fatalf("InterpretToEnd: %v", err)
 	}
-	waitFor(t, 20*time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return ready
-	})
+	waitProcessed(t, c, 20*time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -642,14 +505,20 @@ func TestSearch(t *testing.T) {
 		t.Fatalf("Search: %v", err)
 	}
 
-	// Wait briefly for results; search is async and may return 0+ items.
-	waitFor(t, 5*time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(results) > 0
-	})
+	// Collect results that arrive within 5s; search is async and may return 0+.
+	var results []*vsrocq.SearchResult
+	drain := time.NewTimer(5 * time.Second)
+	defer drain.Stop()
+loop:
+	for {
+		select {
+		case r := <-c.SearchResult:
+			results = append(results, r)
+		case <-drain.C:
+			break loop
+		}
+	}
 
-	mu.Lock()
 	for _, r := range results {
 		if r.ID != searchID {
 			t.Errorf("SearchResult.ID = %q, want %q", r.ID, searchID)
@@ -658,21 +527,10 @@ func TestSearch(t *testing.T) {
 			t.Error("SearchResult.Name is empty")
 		}
 	}
-	mu.Unlock()
 }
-
-// ---- TestProofView ----------------------------------------------------------
 
 func TestProofView(t *testing.T) {
 	c, dir := newClient(t, nil)
-
-	var mu sync.Mutex
-	var proofViews []*vsrocq.ProofViewParams
-	c.OnProofView = func(p *vsrocq.ProofViewParams) {
-		mu.Lock()
-		proofViews = append(proofViews, p)
-		mu.Unlock()
-	}
 
 	content := `Lemma myLemma : 1 = 1.
 Proof.
@@ -687,19 +545,13 @@ Proof.
 		t.Fatalf("InterpretToPoint: %v", err)
 	}
 
-	waitFor(t, 15*time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(proofViews) > 0
-	})
-
-	mu.Lock()
-	count := len(proofViews)
-	mu.Unlock()
-	t.Logf("received %d prover/proofView notifications", count)
+	select {
+	case <-c.ProofView:
+		t.Log("received prover/proofView notification")
+	case <-time.After(15 * time.Second):
+		t.Log("no prover/proofView received within 15s")
+	}
 }
-
-// ---- TestContextCancellation ------------------------------------------------
 
 func TestContextCancellation(t *testing.T) {
 	c, dir := newClient(t, nil)
@@ -721,8 +573,6 @@ func TestContextCancellation(t *testing.T) {
 		t.Logf("DocumentState returned error on cancelled ctx: %v (expected)", err)
 	}
 }
-
-// ---- TestMultipleDocuments --------------------------------------------------
 
 func TestMultipleDocuments(t *testing.T) {
 	c, dir := newClient(t, nil)
@@ -752,8 +602,6 @@ func TestMultipleDocuments(t *testing.T) {
 	}
 }
 
-// ---- TestErrorRequestUnknownMethod ------------------------------------------
-
 // Sending an unrecognised method should produce a JSON-RPC error.
 func TestErrorRequestUnknownMethod(t *testing.T) {
 	// We reach into the client internals by using an exported call path — the
@@ -767,8 +615,6 @@ func TestErrorRequestUnknownMethod(t *testing.T) {
 	result, err := c.DocumentState(ctx, "file:///nonexistent/file.v")
 	t.Logf("DocumentState(nonexistent): result=%v err=%v", result, err)
 }
-
-// ---- TestPpRoundTrip --------------------------------------------------------
 
 // Verify that Pp (json.RawMessage) survives JSON unmarshal/marshal intact.
 func TestPpRoundTrip(t *testing.T) {
@@ -798,8 +644,6 @@ func TestPpRoundTrip(t *testing.T) {
 	}
 }
 
-// ---- TestProofViewMessageUnmarshal ------------------------------------------
-
 func TestProofViewMessageUnmarshal(t *testing.T) {
 	// severity=1 (Error), text=Ppcmd_string "msg"
 	raw := `[1,["Ppcmd_string","msg"]]`
@@ -819,8 +663,6 @@ func TestProofViewMessageUnmarshal(t *testing.T) {
 	}
 }
 
-// ---- TestManualMode ---------------------------------------------------------
-
 func TestManualMode(t *testing.T) {
 	opts := vsrocq.DefaultInitOptions()
 	opts.Proof.Mode = vsrocq.ProofModeManual
@@ -835,11 +677,13 @@ func TestManualMode(t *testing.T) {
 
 	var mu sync.Mutex
 	var highlightSeq []vsrocq.HighlightsParams
-	c.OnHighlights = func(p *vsrocq.HighlightsParams) {
-		mu.Lock()
-		highlightSeq = append(highlightSeq, *p)
-		mu.Unlock()
-	}
+	go func() {
+		for h := range c.Highlights {
+			mu.Lock()
+			highlightSeq = append(highlightSeq, *h)
+			mu.Unlock()
+		}
+	}()
 
 	// Step forward three times.
 	for i := 0; i < 3; i++ {
@@ -853,14 +697,14 @@ func TestManualMode(t *testing.T) {
 		t.Fatalf("StepBackward: %v", err)
 	}
 
-	waitFor(t, 10*time.Second, func() bool {
+	if !waitFor(t, 10*time.Second, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return len(highlightSeq) > 0
-	})
+	}) {
+		t.Fatal("timed out waiting for highlight sequence")
+	}
 }
-
-// ---- TestConcurrentRequests -------------------------------------------------
 
 func TestConcurrentRequests(t *testing.T) {
 	c, dir := newClient(t, nil)

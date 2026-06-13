@@ -11,32 +11,30 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-// Handler functions for server-to-client notifications.
-type (
-	HighlightsHandler   func(*HighlightsParams)
-	MoveCursorHandler   func(*MoveCursorParams)
-	BlockOnErrorHandler func(*BlockOnErrorParams)
-	ProofViewHandler    func(*ProofViewParams)
-	SearchResultHandler func(*SearchResult)
-	LogMessageHandler   func(*LogMessageParams)
-	DiagnosticsHandler  func(*PublishDiagnosticsParams)
-)
+// notifChanBuf is the buffer size for every notification channel.
+// Notifications arriving while the consumer is not reading are buffered;
+// overflow is dropped silently.
+const notifChanBuf = 64
 
 // Client is a connected vsrocq LSP client.
 // It owns the vsrocqtop subprocess and speaks JSON-RPC 2.0 over its stdio.
+//
+// Server-to-client notifications are delivered on the exported channels below.
+// Each channel is buffered (notifChanBuf); callers should drain it promptly or
+// accept that low-priority notifications may be dropped.  All channels are
+// closed when the subprocess exits.
 type Client struct {
 	cmd       *exec.Cmd
 	rpcClient *rpc.Client
-	writer    *lspWriter
 
-	// Notification callbacks (set before calling Start).
-	OnHighlights   HighlightsHandler
-	OnMoveCursor   MoveCursorHandler
-	OnBlockOnError BlockOnErrorHandler
-	OnProofView    ProofViewHandler
-	OnSearchResult SearchResultHandler
-	OnLogMessage   LogMessageHandler
-	OnDiagnostics  DiagnosticsHandler
+	// Notification channels (closed on subprocess exit).
+	Highlights   chan *HighlightsParams
+	MoveCursor   chan *MoveCursorParams
+	BlockOnError chan *BlockOnErrorParams
+	ProofView    chan *ProofViewParams
+	SearchResult chan *SearchResult
+	LogMessage   chan *LogMessageParams
+	Diagnostics  chan *PublishDiagnosticsParams
 }
 
 // NewClient creates a Client that will launch the binary at the given path.
@@ -44,6 +42,15 @@ type Client struct {
 func NewClient(binaryPath string, args ...string) *Client {
 	c := &Client{}
 	c.cmd = exec.Command(binaryPath, args...)
+
+	c.Highlights = make(chan *HighlightsParams, notifChanBuf)
+	c.MoveCursor = make(chan *MoveCursorParams, notifChanBuf)
+	c.BlockOnError = make(chan *BlockOnErrorParams, notifChanBuf)
+	c.ProofView = make(chan *ProofViewParams, notifChanBuf)
+	c.SearchResult = make(chan *SearchResult, notifChanBuf)
+	c.LogMessage = make(chan *LogMessageParams, notifChanBuf)
+	c.Diagnostics = make(chan *PublishDiagnosticsParams, notifChanBuf)
+
 	return c
 }
 
@@ -57,7 +64,7 @@ func (c *Client) Start(ctx context.Context, rootURI string, opts *InitOptions) (
 	if err != nil {
 		return nil, fmt.Errorf("stdin pipe: %w", err)
 	}
-	c.writer = &lspWriter{w: stdinPipe}
+	writer := &lspWriter{w: stdinPipe}
 
 	stdoutPipe, err := c.cmd.StdoutPipe()
 	if err != nil {
@@ -76,7 +83,7 @@ func (c *Client) Start(ctx context.Context, rootURI string, opts *InitOptions) (
 	pr, pw := io.Pipe()
 	go c.readLoop(bufio.NewReader(stdoutPipe), pw)
 
-	c.rpcClient, err = rpc.DialIO(ctx, pr, c.writer)
+	c.rpcClient, err = rpc.DialIO(ctx, pr, writer)
 	if err != nil {
 		return nil, fmt.Errorf("dial: %w", err)
 	}
@@ -91,7 +98,7 @@ func (c *Client) Start(ctx context.Context, rootURI string, opts *InitOptions) (
 		return nil, fmt.Errorf("initialize: %w", err)
 	}
 
-	if err := c.notify("initialized", struct{}{}); err != nil {
+	if err := c.rpcClient.Notify(context.Background(), "initialized", struct{}{}); err != nil {
 		return nil, fmt.Errorf("initialized: %w", err)
 	}
 
@@ -105,18 +112,18 @@ func (c *Client) Shutdown(ctx context.Context) error {
 	if err := c.rpcClient.CallContext(ctx, &result, "shutdown"); err != nil {
 		return fmt.Errorf("shutdown: %w", err)
 	}
-	if err := c.notify("exit", nil); err != nil {
+	if err := c.rpcClient.Notify(context.Background(), "exit", nil); err != nil {
 		return fmt.Errorf("exit: %w", err)
 	}
 	c.rpcClient.Close()
 	return c.cmd.Wait()
 }
 
-// ---- textDocument notifications --------------------------------------------
+// textDocument notifications
 
 // DidOpen opens a document in the server.
 func (c *Client) DidOpen(uri, languageID, text string, version int) error {
-	return c.notify("textDocument/didOpen", &DidOpenTextDocumentParams{
+	return c.rpcClient.Notify(context.Background(), "textDocument/didOpen", &DidOpenTextDocumentParams{
 		TextDocument: TextDocumentItem{
 			URI:        uri,
 			LanguageID: languageID,
@@ -128,7 +135,7 @@ func (c *Client) DidOpen(uri, languageID, text string, version int) error {
 
 // DidChange replaces the full document text (full-sync only).
 func (c *Client) DidChange(uri string, version int, text string) error {
-	return c.notify("textDocument/didChange", &DidChangeTextDocumentParams{
+	return c.rpcClient.Notify(context.Background(), "textDocument/didChange", &DidChangeTextDocumentParams{
 		TextDocument: VersionedTextDocumentIdentifier{URI: uri, Version: version},
 		ContentChanges: []TextDocumentContentChangeEvent{
 			{Text: text},
@@ -138,16 +145,16 @@ func (c *Client) DidChange(uri string, version int, text string) error {
 
 // DidClose closes a document.
 func (c *Client) DidClose(uri string) error {
-	return c.notify("textDocument/didClose", &DidCloseTextDocumentParams{
+	return c.rpcClient.Notify(context.Background(), "textDocument/didClose", &DidCloseTextDocumentParams{
 		TextDocument: TextDocumentIdentifier{URI: uri},
 	})
 }
 
-// ---- vsrocq custom notifications (client → server) -------------------------
+// vsrocq custom notifications (client → server)
 
 // InterpretToPoint asks the server to interpret the document up to pos.
 func (c *Client) InterpretToPoint(uri string, version int, pos Position) error {
-	return c.notify("prover/interpretToPoint", &InterpretToPointParams{
+	return c.rpcClient.Notify(context.Background(), "prover/interpretToPoint", &InterpretToPointParams{
 		TextDocument: VersionedTextDocumentIdentifier{URI: uri, Version: version},
 		Position:     pos,
 	})
@@ -155,33 +162,33 @@ func (c *Client) InterpretToPoint(uri string, version int, pos Position) error {
 
 // InterpretToEnd asks the server to interpret the entire document.
 func (c *Client) InterpretToEnd(uri string, version int) error {
-	return c.notify("prover/interpretToEnd", &InterpretToEndParams{
+	return c.rpcClient.Notify(context.Background(), "prover/interpretToEnd", &InterpretToEndParams{
 		TextDocument: VersionedTextDocumentIdentifier{URI: uri, Version: version},
 	})
 }
 
 // StepForward advances one step in the document.
 func (c *Client) StepForward(uri string, version int) error {
-	return c.notify("prover/stepForward", &StepForwardParams{
+	return c.rpcClient.Notify(context.Background(), "prover/stepForward", &StepForwardParams{
 		TextDocument: VersionedTextDocumentIdentifier{URI: uri, Version: version},
 	})
 }
 
 // StepBackward retracts one step in the document.
 func (c *Client) StepBackward(uri string, version int) error {
-	return c.notify("prover/stepBackward", &StepBackwardParams{
+	return c.rpcClient.Notify(context.Background(), "prover/stepBackward", &StepBackwardParams{
 		TextDocument: VersionedTextDocumentIdentifier{URI: uri, Version: version},
 	})
 }
 
 // Interrupt asks the server to interrupt ongoing processing.
 func (c *Client) Interrupt(uri string, version int) error {
-	return c.notify("prover/interrupt", &InterruptParams{
+	return c.rpcClient.Notify(context.Background(), "prover/interrupt", &InterruptParams{
 		TextDocument: VersionedTextDocumentIdentifier{URI: uri, Version: version},
 	})
 }
 
-// ---- vsrocq custom requests (client → server, with response) ---------------
+// vsrocq custom requests (client → server, with response)
 
 // ResetRocq resets the Rocq interpreter for the given document.
 func (c *Client) ResetRocq(ctx context.Context, uri string) error {
@@ -191,7 +198,7 @@ func (c *Client) ResetRocq(ctx context.Context, uri string) error {
 	})
 }
 
-// Search initiates an asynchronous search. Results arrive via OnSearchResult.
+// Search initiates an asynchronous search. Results arrive on SearchResult.
 func (c *Client) Search(ctx context.Context, uri string, version int, pos Position, pattern, id string) error {
 	var result json.RawMessage
 	return c.rpcClient.CallContext(ctx, &result, "prover/search", &SearchParams{
@@ -264,32 +271,14 @@ func (c *Client) DocumentProofs(ctx context.Context, uri string) (*DocumentProof
 	return &result, err
 }
 
-// ---- internal transport -----------------------------------------------------
-
-// notify sends a JSON-RPC notification (no response expected) by writing
-// directly to the LSP writer, bypassing go-ethereum's request-response cycle.
-func (c *Client) notify(method string, params any) error {
-	msg := struct {
-		JSONRPC string `json:"jsonrpc"`
-		Method  string `json:"method"`
-		Params  any    `json:"params,omitempty"`
-	}{
-		JSONRPC: "2.0",
-		Method:  method,
-		Params:  params,
-	}
-	body, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	return c.writer.WriteMessage(body)
-}
+// internal transport
 
 // readLoop reads Content-Length frames from stdout. Notifications are
-// dispatched to the registered callbacks; responses are forwarded as raw JSON
+// dispatched to the appropriate channels; responses are forwarded as raw JSON
 // into the pipe that go-ethereum's codec reads from.
 func (c *Client) readLoop(stdout *bufio.Reader, pw *io.PipeWriter) {
 	defer pw.Close()
+	defer c.closeNotifChans()
 	for {
 		body, err := readLSPFrame(stdout)
 		if err != nil {
@@ -310,6 +299,16 @@ func (c *Client) readLoop(stdout *bufio.Reader, pw *io.PipeWriter) {
 	}
 }
 
+func (c *Client) closeNotifChans() {
+	close(c.Highlights)
+	close(c.MoveCursor)
+	close(c.BlockOnError)
+	close(c.ProofView)
+	close(c.SearchResult)
+	close(c.LogMessage)
+	close(c.Diagnostics)
+}
+
 func (c *Client) handleNotification(method string, body []byte) {
 	var env struct {
 		Params json.RawMessage `json:"params,omitempty"`
@@ -321,52 +320,59 @@ func (c *Client) handleNotification(method string, body []byte) {
 
 	switch method {
 	case "prover/updateHighlights":
-		if c.OnHighlights != nil {
-			var v HighlightsParams
-			if json.Unmarshal(p, &v) == nil {
-				c.OnHighlights(&v)
+		var v HighlightsParams
+		if json.Unmarshal(p, &v) == nil {
+			select {
+			case c.Highlights <- &v:
+			default:
 			}
 		}
 	case "prover/moveCursor":
-		if c.OnMoveCursor != nil {
-			var v MoveCursorParams
-			if json.Unmarshal(p, &v) == nil {
-				c.OnMoveCursor(&v)
+		var v MoveCursorParams
+		if json.Unmarshal(p, &v) == nil {
+			select {
+			case c.MoveCursor <- &v:
+			default:
 			}
 		}
 	case "prover/blockOnError":
-		if c.OnBlockOnError != nil {
-			var v BlockOnErrorParams
-			if json.Unmarshal(p, &v) == nil {
-				c.OnBlockOnError(&v)
+		var v BlockOnErrorParams
+		if json.Unmarshal(p, &v) == nil {
+			select {
+			case c.BlockOnError <- &v:
+			default:
 			}
 		}
 	case "prover/proofView":
-		if c.OnProofView != nil {
-			var v ProofViewParams
-			if json.Unmarshal(p, &v) == nil {
-				c.OnProofView(&v)
+		var v ProofViewParams
+		if json.Unmarshal(p, &v) == nil {
+			select {
+			case c.ProofView <- &v:
+			default:
 			}
 		}
 	case "prover/searchResult":
-		if c.OnSearchResult != nil {
-			var v SearchResult
-			if json.Unmarshal(p, &v) == nil {
-				c.OnSearchResult(&v)
+		var v SearchResult
+		if json.Unmarshal(p, &v) == nil {
+			select {
+			case c.SearchResult <- &v:
+			default:
 			}
 		}
 	case "prover/debugMessage":
-		if c.OnLogMessage != nil {
-			var v LogMessageParams
-			if json.Unmarshal(p, &v) == nil {
-				c.OnLogMessage(&v)
+		var v LogMessageParams
+		if json.Unmarshal(p, &v) == nil {
+			select {
+			case c.LogMessage <- &v:
+			default:
 			}
 		}
 	case "textDocument/publishDiagnostics":
-		if c.OnDiagnostics != nil {
-			var v PublishDiagnosticsParams
-			if json.Unmarshal(p, &v) == nil {
-				c.OnDiagnostics(&v)
+		var v PublishDiagnosticsParams
+		if json.Unmarshal(p, &v) == nil {
+			select {
+			case c.Diagnostics <- &v:
+			default:
 			}
 		}
 	}
