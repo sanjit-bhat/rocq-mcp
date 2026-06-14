@@ -49,8 +49,8 @@ type TextDocumentContentChangeEvent struct {
 
 // DidChangeTextDocumentParams is the params for textDocument/didChange.
 type DidChangeTextDocumentParams struct {
-	TextDocument   VersionedTextDocumentIdentifier   `json:"textDocument"`
-	ContentChanges []TextDocumentContentChangeEvent  `json:"contentChanges"`
+	TextDocument   VersionedTextDocumentIdentifier  `json:"textDocument"`
+	ContentChanges []TextDocumentContentChangeEvent `json:"contentChanges"`
 }
 
 // DidCloseTextDocumentParams is the params for textDocument/didClose.
@@ -78,10 +78,10 @@ type ClientCapabilities struct{}
 
 // InitializeParams is the params for the initialize request.
 type InitializeParams struct {
-	ProcessID             int                 `json:"processId"`
-	RootURI               string              `json:"rootUri"`
-	Capabilities          ClientCapabilities  `json:"capabilities"`
-	InitializationOptions *InitOptions        `json:"initializationOptions,omitempty"`
+	ProcessID             int                `json:"processId"`
+	RootURI               string             `json:"rootUri"`
+	Capabilities          ClientCapabilities `json:"capabilities"`
+	InitializationOptions *InitOptions       `json:"initializationOptions,omitempty"`
 }
 
 // InitializeResult is the result of initialize.
@@ -229,17 +229,17 @@ type BlockOnErrorParams struct {
 
 // Goal is a single proof goal with hypotheses (Pp format).
 type Goal struct {
-	ID           int  `json:"id"`
-	Name         *string `json:"name,omitempty"`
-	Hypotheses   []Pp `json:"hypotheses"`
-	Goal         Pp   `json:"goal"`
+	ID         int     `json:"id"`
+	Name       *string `json:"name,omitempty"`
+	Hypotheses []Pp    `json:"hypotheses"`
+	Goal       Pp      `json:"goal"`
 }
 
 // ProofState groups goals by category.
 type ProofState struct {
-	Goals         []Goal `json:"goals"`
-	ShelvedGoals  []Goal `json:"shelvedGoals"`
-	GivenUpGoals  []Goal `json:"givenUpGoals"`
+	Goals          []Goal `json:"goals"`
+	ShelvedGoals   []Goal `json:"shelvedGoals"`
+	GivenUpGoals   []Goal `json:"givenUpGoals"`
 	UnfocusedGoals []Goal `json:"unfocusedGoals"`
 }
 

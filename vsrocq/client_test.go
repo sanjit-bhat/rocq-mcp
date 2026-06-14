@@ -685,7 +685,7 @@ func TestManualMode(t *testing.T) {
 	}()
 
 	// Step forward three times.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := c.StepForward(uri, 1); err != nil {
 			t.Fatalf("StepForward[%d]: %v", i, err)
 		}

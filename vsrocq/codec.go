@@ -49,8 +49,8 @@ func readLSPFrame(r *bufio.Reader) ([]byte, error) {
 		if line == "" {
 			break
 		}
-		if strings.HasPrefix(line, "Content-Length:") {
-			v := strings.TrimSpace(strings.TrimPrefix(line, "Content-Length:"))
+		if after, ok := strings.CutPrefix(line, "Content-Length:"); ok {
+			v := strings.TrimSpace(after)
 			n, err := strconv.Atoi(v)
 			if err != nil {
 				return nil, fmt.Errorf("bad Content-Length: %w", err)
