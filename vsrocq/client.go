@@ -77,15 +77,27 @@ func (c *Client) Start(ctx context.Context, rootURI string, opts *InitOptions) (
 		return nil, fmt.Errorf("start vsrocqtop: %w", err)
 	}
 
-	// Bridge: readLoop reads Content-Length frames from stdout, dispatches
-	// notifications directly, and forwards response frames as raw JSON into
-	// the pipe that go-ethereum reads from.
 	pr, pw := io.Pipe()
-	go c.readLoop(bufio.NewReader(stdoutPipe), pw)
+	go c.lspBridge(bufio.NewReader(stdoutPipe), pw)
 
 	c.rpcClient, err = rpc.DialIO(ctx, pr, writer)
 	if err != nil {
 		return nil, fmt.Errorf("dial: %w", err)
+	}
+
+	proverH := &proverNotifHandler{
+		highlights:   c.Highlights,
+		moveCursor:   c.MoveCursor,
+		blockOnError: c.BlockOnError,
+		proofView:    c.ProofView,
+		searchResult: c.SearchResult,
+		logMessage:   c.LogMessage,
+	}
+	if err := c.rpcClient.RegisterName("prover", proverH); err != nil {
+		return nil, fmt.Errorf("register prover handlers: %w", err)
+	}
+	if err := c.rpcClient.RegisterName("textDocument", &textDocNotifHandler{c.Diagnostics}); err != nil {
+		return nil, fmt.Errorf("register textDocument handlers: %w", err)
 	}
 
 	var result InitializeResult
@@ -273,28 +285,27 @@ func (c *Client) DocumentProofs(ctx context.Context, uri string) (*DocumentProof
 
 // internal transport
 
-// readLoop reads Content-Length frames from stdout. Notifications are
-// dispatched to the appropriate channels; responses are forwarded as raw JSON
-// into the pipe that go-ethereum's codec reads from.
-func (c *Client) readLoop(stdout *bufio.Reader, pw *io.PipeWriter) {
+// lspToRPC reads one Content-Length frame from an LSP stream and rewrites the
+// JSON body so go-ethereum can dispatch it.
+func lspToRPC(r *bufio.Reader) ([]byte, error) {
+	body, err := readLSPFrame(r)
+	if err != nil {
+		return nil, err
+	}
+	return rewriteBody(body), nil
+}
+
+// lspBridge pumps messages from vsrocqtop's stdout into pw for go-ethereum.
+func (c *Client) lspBridge(stdout *bufio.Reader, pw *io.PipeWriter) {
 	defer pw.Close()
 	defer c.closeNotifChans()
 	for {
-		body, err := readLSPFrame(stdout)
+		body, err := lspToRPC(stdout)
 		if err != nil {
 			return
 		}
-
-		var peek struct {
-			ID     *json.RawMessage `json:"id,omitempty"`
-			Method string           `json:"method,omitempty"`
-		}
-		if json.Unmarshal(body, &peek) == nil && peek.Method != "" && peek.ID == nil {
-			c.handleNotification(peek.Method, body)
-		} else {
-			if _, err := pw.Write(body); err != nil {
-				return
-			}
+		if _, err := pw.Write(body); err != nil {
+			return
 		}
 	}
 }
@@ -309,71 +320,57 @@ func (c *Client) closeNotifChans() {
 	close(c.Diagnostics)
 }
 
-func (c *Client) handleNotification(method string, body []byte) {
-	var env struct {
-		Params json.RawMessage `json:"params,omitempty"`
-	}
-	if err := json.Unmarshal(body, &env); err != nil {
-		return
-	}
-	p := env.Params
+type proverNotifHandler struct {
+	highlights   chan *HighlightsParams
+	moveCursor   chan *MoveCursorParams
+	blockOnError chan *BlockOnErrorParams
+	proofView    chan *ProofViewParams
+	searchResult chan *SearchResult
+	logMessage   chan *LogMessageParams
+}
 
-	switch method {
-	case "prover/updateHighlights":
-		var v HighlightsParams
-		if json.Unmarshal(p, &v) == nil {
-			select {
-			case c.Highlights <- &v:
-			default:
-			}
-		}
-	case "prover/moveCursor":
-		var v MoveCursorParams
-		if json.Unmarshal(p, &v) == nil {
-			select {
-			case c.MoveCursor <- &v:
-			default:
-			}
-		}
-	case "prover/blockOnError":
-		var v BlockOnErrorParams
-		if json.Unmarshal(p, &v) == nil {
-			select {
-			case c.BlockOnError <- &v:
-			default:
-			}
-		}
-	case "prover/proofView":
-		var v ProofViewParams
-		if json.Unmarshal(p, &v) == nil {
-			select {
-			case c.ProofView <- &v:
-			default:
-			}
-		}
-	case "prover/searchResult":
-		var v SearchResult
-		if json.Unmarshal(p, &v) == nil {
-			select {
-			case c.SearchResult <- &v:
-			default:
-			}
-		}
-	case "prover/debugMessage":
-		var v LogMessageParams
-		if json.Unmarshal(p, &v) == nil {
-			select {
-			case c.LogMessage <- &v:
-			default:
-			}
-		}
-	case "textDocument/publishDiagnostics":
-		var v PublishDiagnosticsParams
-		if json.Unmarshal(p, &v) == nil {
-			select {
-			case c.Diagnostics <- &v:
-			default:
-			}
-		}
+func sendOrDrop[T any](ch chan *T, v T) {
+	select {
+	case ch <- &v:
+	default:
 	}
+}
+
+func (h *proverNotifHandler) UpdateHighlights(_ context.Context, p HighlightsParams) error {
+	sendOrDrop(h.highlights, p)
+	return nil
+}
+
+func (h *proverNotifHandler) MoveCursor(_ context.Context, p MoveCursorParams) error {
+	sendOrDrop(h.moveCursor, p)
+	return nil
+}
+
+func (h *proverNotifHandler) BlockOnError(_ context.Context, p BlockOnErrorParams) error {
+	sendOrDrop(h.blockOnError, p)
+	return nil
+}
+
+func (h *proverNotifHandler) ProofView(_ context.Context, p ProofViewParams) error {
+	sendOrDrop(h.proofView, p)
+	return nil
+}
+
+func (h *proverNotifHandler) SearchResult(_ context.Context, p SearchResult) error {
+	sendOrDrop(h.searchResult, p)
+	return nil
+}
+
+func (h *proverNotifHandler) DebugMessage(_ context.Context, p LogMessageParams) error {
+	sendOrDrop(h.logMessage, p)
+	return nil
+}
+
+type textDocNotifHandler struct {
+	diagnostics chan *PublishDiagnosticsParams
+}
+
+func (h *textDocNotifHandler) PublishDiagnostics(_ context.Context, p PublishDiagnosticsParams) error {
+	sendOrDrop(h.diagnostics, p)
+	return nil
 }

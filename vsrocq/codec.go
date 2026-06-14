@@ -9,6 +9,34 @@ import (
 	"strings"
 )
 
+// rewriteBody rewrites a vsrocq server→client message body for go-ethereum dispatch:
+//   - method "foo/bar" → "foo_bar"  (go-ethereum splits on "_")
+//   - params {…}       → [{…}]      (go-ethereum expects positional array)
+//
+// Responses (id present) and messages with no method pass through unchanged.
+func rewriteBody(body []byte) []byte {
+	var msg struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      json.RawMessage `json:"id,omitempty"`
+		Method  string          `json:"method,omitempty"`
+		Params  json.RawMessage `json:"params,omitempty"`
+	}
+	if err := json.Unmarshal(body, &msg); err != nil || msg.Method == "" || msg.ID != nil {
+		return body
+	}
+	msg.Method = strings.ReplaceAll(msg.Method, "/", "_")
+	if len(msg.Params) > 0 && msg.Params[0] == '{' {
+		wrapped := make(json.RawMessage, 0, len(msg.Params)+2)
+		wrapped = append(append(append(wrapped, '['), msg.Params...), ']')
+		msg.Params = wrapped
+	}
+	out, err := json.Marshal(msg)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
 // readLSPFrame reads one Content-Length framed LSP message from r.
 func readLSPFrame(r *bufio.Reader) ([]byte, error) {
 	contentLength := -1
