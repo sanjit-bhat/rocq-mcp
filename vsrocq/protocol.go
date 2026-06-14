@@ -123,6 +123,13 @@ const (
 	PointInterpretationNextCommand PointInterpretationMode = 1
 )
 
+// Delegation mode constants for ProofOptions.
+const (
+	DelegationNone     = "None"
+	DelegationSkip     = "Skip"
+	DelegationDelegate = "Delegate"
+)
+
 // ProofOptions configures proof checking behaviour.
 type ProofOptions struct {
 	Delegation              string                  `json:"delegation"`
