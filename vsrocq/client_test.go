@@ -547,9 +547,8 @@ Proof.
 
 	select {
 	case <-c.ProofView:
-		t.Log("received prover/proofView notification")
 	case <-time.After(15 * time.Second):
-		t.Log("no prover/proofView received within 15s")
+		t.Fatal("timed out waiting for prover/proofView")
 	}
 }
 
