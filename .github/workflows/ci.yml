@@ -11,11 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
       - name: Install Just
         run: |
           sudo apt-get update
           sudo apt-get install just
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: tchajed/setup-rocq@v1
+      - name: Install vsrocq
+        run: |
+          opam update
+          opam install -y vsrocq-language-server.2.4.3
       - run: just ci
