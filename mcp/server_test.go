@@ -277,7 +277,7 @@ func TestBarProofGoals(t *testing.T) {
 
 	want := rocqmcp.FormatProofState(&vsrocq.StringProofState{
 		Goals: []vsrocq.StringGoal{{
-			Hypotheses: []string{"x : nat"},
+			Hypotheses: []vsrocq.StringHypothesis{{IDs: []string{"x"}, Type: "nat"}},
 			Goal:       "x = x",
 		}},
 	})
@@ -352,7 +352,7 @@ func TestDelegationSkipOmitsFoo(t *testing.T) {
 
 	wantGoals := rocqmcp.FormatProofState(&vsrocq.StringProofState{
 		Goals: []vsrocq.StringGoal{{
-			Hypotheses: []string{"x : nat"},
+			Hypotheses: []vsrocq.StringHypothesis{{IDs: []string{"x"}, Type: "nat"}},
 			Goal:       "x = x",
 		}},
 	})

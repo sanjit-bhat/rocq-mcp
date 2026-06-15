@@ -251,13 +251,25 @@ type ProofState struct {
 	UnfocusedGoals []Goal `json:"unfocusedGoals"`
 }
 
+// StringHypothesis is one hypothesis entry in a StringGoal.
+// ids holds the variable names sharing the same type (e.g. ["x", "y"]),
+// body is set for let-bindings, and Type is the rendered type string.
+// The JSON key for Type is "_type" — ppx_yojson_conv uses the OCaml field
+// name verbatim, and OCaml requires a leading underscore to avoid the
+// reserved word "type".
+type StringHypothesis struct {
+	IDs  []string `json:"ids"`
+	Body *string  `json:"body"`
+	Type string   `json:"_type"`
+}
+
 // StringGoal is a single proof goal in String ppmode — all text fields are
 // plain strings rather than Ppcmd trees.
 type StringGoal struct {
-	ID         int      `json:"id"`
-	Name       *string  `json:"name"`
-	Hypotheses []string `json:"hypotheses"`
-	Goal       string   `json:"goal"`
+	ID         int                `json:"id"`
+	Name       *string            `json:"name"`
+	Hypotheses []StringHypothesis `json:"hypotheses"`
+	Goal       string             `json:"goal"`
 }
 
 // StringProofState is the pp_proof payload when ppmode is "String".

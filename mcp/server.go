@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -464,7 +465,13 @@ func FormatProofState(ps *vsrocq.StringProofState) string {
 		}
 		b = append(b, '\n')
 		for _, h := range g.Hypotheses {
-			b = append(b, h...)
+			b = append(b, strings.Join(h.IDs, " ")...)
+			if h.Body != nil {
+				b = append(b, " := "...)
+				b = append(b, *h.Body...)
+			}
+			b = append(b, " : "...)
+			b = append(b, h.Type...)
 			b = append(b, '\n')
 		}
 		b = append(b, "============================\n"...)
@@ -488,10 +495,7 @@ func buildCheckResult(processedTo int, toLine int, diags []vsrocq.Diagnostic, go
 		}
 	}
 
-	checkedTo := processedTo
-	if checkedTo > toLine {
-		checkedTo = toLine
-	}
+	checkedTo := min(processedTo, toLine)
 
 	if errors == nil {
 		errors = []CheckError{}
