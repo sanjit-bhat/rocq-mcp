@@ -55,9 +55,11 @@ func newClient(t *testing.T, opts *vsrocq.InitOptions) (*vsrocq.Client, string) 
 		_ = c.Shutdown(shutCtx)
 	})
 
-	_, err := c.Start(ctx, opts)
-	if err != nil {
+	if err := c.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)
+	}
+	if _, err := c.Initialize(ctx, opts); err != nil {
+		t.Fatalf("Initialize: %v", err)
 	}
 	return c, dir
 }
@@ -114,14 +116,22 @@ func TestInitialize(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	result, err := c.Start(ctx, nil)
-	if err != nil {
+	if err := c.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)
+	}
+	result, err := c.Initialize(ctx, nil)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
 	}
 
 	// The server must return a non-nil result with some capabilities.
 	if result == nil {
 		t.Fatal("InitializeResult is nil")
+	}
+
+	// Calling Initialize again should succeed (reconfigures init vars without restart).
+	if _, err := c.Initialize(ctx, nil); err != nil {
+		t.Fatalf("second Initialize: %v", err)
 	}
 
 	shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -165,8 +175,11 @@ func TestShutdownClean(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if _, err := c.Start(ctx, nil); err != nil {
+	if err := c.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)
+	}
+	if _, err := c.Initialize(ctx, nil); err != nil {
+		t.Fatalf("Initialize: %v", err)
 	}
 	if err := c.Shutdown(ctx); err != nil {
 		t.Fatalf("Shutdown: %v", err)

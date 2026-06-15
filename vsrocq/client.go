@@ -54,27 +54,25 @@ func NewClient(binaryPath string, args ...string) *Client {
 	return c
 }
 
-// Start launches the vsrocqtop process and performs the LSP initialize/initialized handshake.
-func (c *Client) Start(ctx context.Context, opts *InitOptions) (*InitializeResult, error) {
-	if opts == nil {
-		opts = DefaultInitOptions()
-	}
-
+// Start launches the vsrocqtop process and sets up the JSON-RPC transport and
+// notification handlers. Call Initialize to perform the LSP initialize/initialized
+// handshake before using any other methods.
+func (c *Client) Start(ctx context.Context) error {
 	stdinPipe, err := c.cmd.StdinPipe()
 	if err != nil {
-		return nil, fmt.Errorf("stdin pipe: %w", err)
+		return fmt.Errorf("stdin pipe: %w", err)
 	}
 	writer := &lspWriter{w: stdinPipe}
 
 	stdoutPipe, err := c.cmd.StdoutPipe()
 	if err != nil {
-		return nil, fmt.Errorf("stdout pipe: %w", err)
+		return fmt.Errorf("stdout pipe: %w", err)
 	}
 
 	c.cmd.Stderr = io.Discard
 
 	if err := c.cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start vsrocqtop: %w", err)
+		return fmt.Errorf("start vsrocqtop: %w", err)
 	}
 
 	pr, pw := io.Pipe()
@@ -82,7 +80,7 @@ func (c *Client) Start(ctx context.Context, opts *InitOptions) (*InitializeResul
 
 	c.rpcClient, err = rpc.DialIO(ctx, pr, writer)
 	if err != nil {
-		return nil, fmt.Errorf("dial: %w", err)
+		return fmt.Errorf("dial: %w", err)
 	}
 
 	proverH := &proverNotifHandler{
@@ -94,10 +92,21 @@ func (c *Client) Start(ctx context.Context, opts *InitOptions) (*InitializeResul
 		logMessage:   c.LogMessage,
 	}
 	if err := c.rpcClient.RegisterName("prover", proverH); err != nil {
-		return nil, fmt.Errorf("register prover handlers: %w", err)
+		return fmt.Errorf("register prover handlers: %w", err)
 	}
 	if err := c.rpcClient.RegisterName("textDocument", &textDocNotifHandler{c.Diagnostics}); err != nil {
-		return nil, fmt.Errorf("register textDocument handlers: %w", err)
+		return fmt.Errorf("register textDocument handlers: %w", err)
+	}
+
+	return nil
+}
+
+// Initialize sends the LSP initialize/initialized handshake. It may be called
+// multiple times to reconfigure the server (e.g. change delegation strategy)
+// without restarting the process — vsrocqserv resets its init vars on each call.
+func (c *Client) Initialize(ctx context.Context, opts *InitOptions) (*InitializeResult, error) {
+	if opts == nil {
+		opts = DefaultInitOptions()
 	}
 
 	var result InitializeResult

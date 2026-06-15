@@ -128,26 +128,30 @@ const (
 	// Drop proof sentences from the schedule; only the Qed terminator is executed.
 	// Because no proof state is established, Qed fails and the proof is
 	// auto-admitted via RAdmitted (Declare.Proof.save_admitted).  The Qed failure
-	// is reported as a diagnostic but execution continues.  Use ProofModeManual
-	// so that only the focused proof is scheduled for execution; in Continuous
-	// mode vsrocq schedules every proof for execution and all Qeds fail.
+	// is reported as a diagnostic but execution continues.
 	DelegationSkip     = "Skip"
 	DelegationDelegate = "Delegate" // delegate proof sentences to background workers
 )
 
 // ProofOptions configures proof checking behaviour.
 type ProofOptions struct {
-	Delegation              string                  `json:"delegation"`              // delegation strategy used by the server (None/Skip/Delegate)
-	Workers                 *int                    `json:"workers"`                 // number of workers assigned to proofs in delegation mode
-	Mode                    ProofMode               `json:"mode"`                    // Manual or Continuous checking
-	Block                   bool                    `json:"block"`                   // halt execution after the first error
-	PointInterpretationMode PointInterpretationMode `json:"pointInterpretationMode"` // Cursor or NextCommand interpretation
+	// delegation strategy used by the server (None/Skip/Delegate)
+	Delegation string `json:"delegation"`
+	// number of workers assigned to proofs in delegation mode
+	Workers *int `json:"workers"`
+	// Manual or Continuous checking
+	Mode ProofMode `json:"mode"`
+	// halt execution after the first error
+	Block bool `json:"block"`
+	// Cursor or NextCommand interpretation
+	PointInterpretationMode PointInterpretationMode `json:"pointInterpretationMode"`
 }
 
 // GoalsOptions configures goal display.
 type GoalsOptions struct {
 	Messages MessagesOptions `json:"messages"`
-	PPMode   string          `json:"ppmode,omitempty"` // "Pp" or "String"; "String" returns plaintext via pp_proof/pp_messages
+	// "Pp" or "String"; "String" returns plaintext via pp_proof/pp_messages
+	PPMode string `json:"ppmode,omitempty"`
 }
 
 // MessagesOptions controls what appears in proofview messages.
@@ -157,9 +161,12 @@ type MessagesOptions struct {
 
 // CompletionOptions configures completion.
 type CompletionOptions struct {
-	Enable           bool    `json:"enable"`           // enable completion support from the vsrocq language server
-	Algorithm        int     `json:"algorithm"`        // ranking algorithm: 0=SplitTypeIntersection, 1=StructuredSplitUnification
-	UnificationLimit int     `json:"unificationLimit"` // max theorems for unification during completion; higher improves results but slows completion
+	// enable completion support from the vsrocq language server
+	Enable bool `json:"enable"`
+	// ranking algorithm: 0=SplitTypeIntersection, 1=StructuredSplitUnification
+	Algorithm int `json:"algorithm"`
+	// max theorems for unification during completion; higher improves results but slows completion
+	UnificationLimit int     `json:"unificationLimit"`
 	AtomicFactor     float64 `json:"atomicFactor"`
 	SizeFactor       float64 `json:"sizeFactor"`
 }
@@ -177,29 +184,23 @@ type MemoryOptions struct {
 
 // InterruptOptions configures interruption behaviour.
 type InterruptOptions struct {
-	Preempt bool `json:"preempt"` // hovering and other queries preempt checking tasks (recommended Rocq >= 9.3)
+	Preempt bool `json:"preempt"` // hovering and other queries preempt checking tasks
 }
 
 // DefaultInitOptions returns safe defaults for vsrocq.
 func DefaultInitOptions() *InitOptions {
 	return &InitOptions{
 		Proof: ProofOptions{
-			Delegation:              "None",
-			Mode:                    ProofModeContinuous,
+			Delegation:              DelegationNone,
+			Mode:                    ProofModeManual,
 			Block:                   false,
-			PointInterpretationMode: PointInterpretationCursor,
+			PointInterpretationMode: PointInterpretationNextCommand,
 		},
 		Goals: GoalsOptions{
 			Messages: MessagesOptions{Full: false},
 			PPMode:   "String",
 		},
-		Completion: CompletionOptions{
-			Enable:           false,
-			Algorithm:        0,
-			UnificationLimit: 1000,
-			AtomicFactor:     5.0,
-			SizeFactor:       5.0,
-		},
+		Completion:  CompletionOptions{Enable: false},
 		Diagnostics: DiagnosticsOptions{Enable: true, Full: false},
 		Memory:      MemoryOptions{Limit: 4},
 		Interrupt:   InterruptOptions{Preempt: false},
