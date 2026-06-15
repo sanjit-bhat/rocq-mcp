@@ -367,7 +367,7 @@ func (s *Server) drainUntilStable(uri string) (processedTo int, diags []vsrocq.D
 				return
 			}
 			if pv.PPProof != nil {
-				goals = formatProofState(pv.PPProof)
+				goals = FormatProofState(pv.PPProof)
 			}
 			resetTimer(timer, stableTimeout)
 
@@ -432,7 +432,7 @@ func (s *Server) drainBuffered(uri string, processedTo *int, diags *[]vsrocq.Dia
 				return
 			}
 			if pv.PPProof != nil {
-				*goals = formatProofState(pv.PPProof)
+				*goals = FormatProofState(pv.PPProof)
 			}
 		case d, ok := <-c.Diagnostics:
 			if !ok {
@@ -475,9 +475,9 @@ func resetTimer(t *time.Timer, d time.Duration) {
 
 // ---- result construction ----------------------------------------------------
 
-// formatProofState renders a StringProofState as a human-readable plaintext
+// FormatProofState renders a StringProofState as a human-readable plaintext
 // string in the classic Rocq proof-view style.
-func formatProofState(ps *vsrocq.StringProofState) string {
+func FormatProofState(ps *vsrocq.StringProofState) string {
 	if ps == nil || len(ps.Goals) == 0 {
 		return ""
 	}

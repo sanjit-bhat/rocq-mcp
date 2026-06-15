@@ -12,6 +12,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	rocqmcp "github.com/sanjit-bhat/rocq-mcp/mcp"
+	"github.com/sanjit-bhat/rocq-mcp/vsrocq"
 )
 
 // vsrocqBin returns the path to vsrocqtop, or skips the test if unavailable.
@@ -274,5 +275,61 @@ func TestUpdateFile(t *testing.T) {
 	r2 := callTool(t, cs, "check_to_end", map[string]any{"path": path})
 	if len(r2.Errors) != 0 {
 		t.Errorf("expected no errors after fix, got %v", r2.Errors)
+	}
+}
+
+// TestDelegationSkipOmitsFoo verifies that check with omit skips foo's proof
+// body (Phase 1 DelegationSkip) and returns bar's proof state.
+//
+// File layout (0-indexed lines):
+//
+//	0: Lemma foo (x y : nat) : x + y = y + x.
+//	1: Proof.
+//	2:   reflexivity.            ← would fail if executed in Phase 2
+//	3: Qed.
+//	4: Lemma bar (x : nat) : x = x.
+//	5: Proof.                   ← cursor; bar's goal (x = x) is live here
+//
+// With omit=2 Phase 1 uses DelegationSkip up to line 2: foo's proof sentences
+// are dropped, only Qed runs (fails, foo auto-admitted).  Phase 2 (DelegationNone)
+// verifies bar's proof state starting from the cursor at line 5.
+func TestDelegationSkipOmitsFoo(t *testing.T) {
+	bin := vsrocqBin(t)
+	dir := t.TempDir()
+	_, cs := startServer(t, bin, "file://"+dir)
+
+	const content = "" +
+		"Lemma foo (x y : nat) : x + y = y + x.\n" + // 0
+		"Proof.\n" + // 1
+		"  reflexivity.\n" + // 2
+		"Qed.\n" + // 3
+		"Lemma bar (x : nat) : x = x.\n" + // 4
+		"Proof.\n" // 5
+
+	path := filepath.Join(dir, "omit.v")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	r := callTool(t, cs, "check", map[string]any{
+		"path":    path,
+		"to_line": 5,
+		"omit":    2,
+	})
+	t.Logf("check: checked_to=%d errors=%v goals=%q", r.CheckedTo, r.Errors, r.ProofGoals)
+
+	wantGoals := rocqmcp.FormatProofState(&vsrocq.StringProofState{
+		Goals: []vsrocq.StringGoal{{
+			Hypotheses: []string{"x : nat"},
+			Goal:       "x = x",
+		}},
+	})
+	if r.ProofGoals != wantGoals {
+		t.Errorf("proof_goals = %q, want %q", r.ProofGoals, wantGoals)
+	}
+	for _, e := range r.Errors {
+		if e.Line >= 4 {
+			t.Errorf("unexpected error on bar: line %d: %s", e.Line, e.Message)
+		}
 	}
 }

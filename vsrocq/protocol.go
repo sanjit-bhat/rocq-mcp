@@ -126,9 +126,15 @@ const (
 
 // Delegation strategy constants for ProofOptions.Delegation.
 const (
-	DelegationNone     = "None"     // no delegation; all proofs are checked one after the other
-	DelegationSkip     = "Skip"     // skip proofs that are out of focus (requires continuous mode off)
-	DelegationDelegate = "Delegate" // delegate proofs to background workers
+	DelegationNone = "None" // check all proof sentences in the main process
+	// Drop proof sentences from the schedule; only the Qed terminator is executed.
+	// Because no proof state is established, Qed fails and the proof is
+	// auto-admitted via RAdmitted (Declare.Proof.save_admitted).  The Qed failure
+	// is reported as a diagnostic but execution continues.  Use ProofModeManual
+	// so that only the focused proof is scheduled for execution; in Continuous
+	// mode vsrocq schedules every proof for execution and all Qeds fail.
+	DelegationSkip     = "Skip"
+	DelegationDelegate = "Delegate" // delegate proof sentences to background workers
 )
 
 // ProofOptions configures proof checking behaviour.
