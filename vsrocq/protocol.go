@@ -107,36 +107,37 @@ type InitOptions struct {
 	Interrupt   InterruptOptions   `json:"interrupt"`
 }
 
-// ProofMode is 0=Manual, 1=Continuous.
+// ProofMode configures the proof checking mode for Rocq.
 type ProofMode int
 
 const (
-	ProofModeManual     ProofMode = 0
-	ProofModeContinuous ProofMode = 1
+	ProofModeManual     ProofMode = 0 // proofs are checked only on explicit user commands
+	ProofModeContinuous ProofMode = 1 // proofs are checked continuously as the document changes
 )
 
-// PointInterpretationMode is 0=Cursor, 1=NextCommand.
+// PointInterpretationMode determines the point to which the proof is checked
+// when using the "Interpret to point" command.
 type PointInterpretationMode int
 
 const (
-	PointInterpretationCursor      PointInterpretationMode = 0
-	PointInterpretationNextCommand PointInterpretationMode = 1
+	PointInterpretationCursor      PointInterpretationMode = 0 // interpret up to the cursor position
+	PointInterpretationNextCommand PointInterpretationMode = 1 // interpret up to the next command after the cursor
 )
 
-// Delegation mode constants for ProofOptions.
+// Delegation strategy constants for ProofOptions.Delegation.
 const (
-	DelegationNone     = "None"
-	DelegationSkip     = "Skip"
-	DelegationDelegate = "Delegate"
+	DelegationNone     = "None"     // no delegation; all proofs are checked one after the other
+	DelegationSkip     = "Skip"     // skip proofs that are out of focus (requires continuous mode off)
+	DelegationDelegate = "Delegate" // delegate proofs to background workers
 )
 
 // ProofOptions configures proof checking behaviour.
 type ProofOptions struct {
-	Delegation              string                  `json:"delegation"`
-	Workers                 *int                    `json:"workers"`
-	Mode                    ProofMode               `json:"mode"`
-	Block                   bool                    `json:"block"`
-	PointInterpretationMode PointInterpretationMode `json:"pointInterpretationMode"`
+	Delegation              string                  `json:"delegation"`              // delegation strategy used by the server (None/Skip/Delegate)
+	Workers                 *int                    `json:"workers"`                 // number of workers assigned to proofs in delegation mode
+	Mode                    ProofMode               `json:"mode"`                    // Manual or Continuous checking
+	Block                   bool                    `json:"block"`                   // halt execution after the first error
+	PointInterpretationMode PointInterpretationMode `json:"pointInterpretationMode"` // Cursor or NextCommand interpretation
 }
 
 // GoalsOptions configures goal display.
@@ -150,16 +151,16 @@ type DiffOptions struct {
 	Mode string `json:"mode"` // "off" | "on" | "removed"
 }
 
-// MessagesOptions sets whether full messages are shown.
+// MessagesOptions controls what appears in proofview messages.
 type MessagesOptions struct {
-	Full bool `json:"full"`
+	Full bool `json:"full"` // include warnings and errors in proofview messages
 }
 
 // CompletionOptions configures completion.
 type CompletionOptions struct {
-	Enable           bool    `json:"enable"`
-	Algorithm        int     `json:"algorithm"`
-	UnificationLimit int     `json:"unificationLimit"`
+	Enable           bool    `json:"enable"`           // enable completion support from the vsrocq language server
+	Algorithm        int     `json:"algorithm"`        // ranking algorithm: 0=SplitTypeIntersection, 1=StructuredSplitUnification
+	UnificationLimit int     `json:"unificationLimit"` // max theorems for unification during completion; higher improves results but slows completion
 	AtomicFactor     float64 `json:"atomicFactor"`
 	SizeFactor       float64 `json:"sizeFactor"`
 }
@@ -167,17 +168,17 @@ type CompletionOptions struct {
 // DiagnosticsOptions configures diagnostics.
 type DiagnosticsOptions struct {
 	Enable bool `json:"enable"`
-	Full   bool `json:"full"`
+	Full   bool `json:"full"` // include info-level entries in diagnostics
 }
 
 // MemoryOptions configures memory limits.
 type MemoryOptions struct {
-	Limit int `json:"limit"`
+	Limit int `json:"limit"` // GB threshold above which execution state is discarded for saved documents
 }
 
 // InterruptOptions configures interruption behaviour.
 type InterruptOptions struct {
-	Preempt bool `json:"preempt"`
+	Preempt bool `json:"preempt"` // hovering and other queries preempt checking tasks (recommended Rocq >= 9.3)
 }
 
 // DefaultInitOptions returns safe defaults for vsrocq.
@@ -217,9 +218,9 @@ type Pp = json.RawMessage
 // HighlightsParams is the payload of prover/updateHighlights.
 type HighlightsParams struct {
 	URI             string  `json:"uri"`
-	PreparedRange   []Range `json:"preparedRange"`
-	ProcessingRange []Range `json:"processingRange"`
-	ProcessedRange  []Range `json:"processedRange"`
+	PreparedRange   []Range `json:"preparedRange"`   // scheduled for checking
+	ProcessingRange []Range `json:"processingRange"` // currently being checked
+	ProcessedRange  []Range `json:"processedRange"`  // already checked (verified)
 }
 
 // MoveCursorParams is the payload of prover/moveCursor.
@@ -299,12 +300,14 @@ type LogMessageParams struct {
 // vsrocq custom request params / results
 
 // InterpretToPointParams is the params for prover/interpretToPoint (notification).
+// Interprets the current Rocq file up to the given point.
 type InterpretToPointParams struct {
 	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
 	Position     Position                        `json:"position"`
 }
 
 // InterpretToEndParams is the params for prover/interpretToEnd (notification).
+// Interprets the current Rocq file until the end.
 type InterpretToEndParams struct {
 	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
 }
@@ -330,6 +333,7 @@ type ResetParams struct {
 }
 
 // SearchParams is the params for prover/search (request).
+// Searches for the term pattern at the cursor.
 type SearchParams struct {
 	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
 	Position     Position                        `json:"position"`
@@ -338,6 +342,7 @@ type SearchParams struct {
 }
 
 // AboutParams is the params for prover/about (request).
+// Returns information about the term pattern at the cursor.
 type AboutParams struct {
 	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
 	Position     Position                        `json:"position"`
@@ -345,6 +350,7 @@ type AboutParams struct {
 }
 
 // CheckParams is the params for prover/check (request).
+// Checks the type of the term at the cursor.
 type CheckParams struct {
 	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
 	Position     Position                        `json:"position"`
@@ -352,6 +358,7 @@ type CheckParams struct {
 }
 
 // LocateParams is the params for prover/locate (request).
+// Locates the term at the cursor.
 type LocateParams struct {
 	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
 	Position     Position                        `json:"position"`
@@ -359,6 +366,7 @@ type LocateParams struct {
 }
 
 // PrintParams is the params for prover/print (request).
+// Prints the definition of the term at the cursor.
 type PrintParams struct {
 	TextDocument VersionedTextDocumentIdentifier `json:"textDocument"`
 	Position     Position                        `json:"position"`
