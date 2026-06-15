@@ -250,6 +250,42 @@ func TestProofGoalsPlaintext(t *testing.T) {
 	}
 }
 
+// TestBarProofGoals verifies that the proof state for Lemma bar, which has a
+// hypothesis, is correctly rendered with the hypothesis line included.
+//
+// File layout (0-indexed lines):
+//
+//	0: Lemma bar (x : nat) : x = x.
+//	1: Proof.
+func TestBarProofGoals(t *testing.T) {
+	bin := vsrocqBin(t)
+	dir := t.TempDir()
+	_, cs := startServer(t, bin)
+
+	content := "Lemma bar (x : nat) : x = x.\nProof.\n"
+	path := filepath.Join(dir, "bar.v")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Check to line 1 (the "Proof." line) — bar's goal should be live.
+	r := callTool(t, cs, "check", map[string]any{
+		"path":    path,
+		"to_line": 1,
+	})
+	t.Logf("checked_to=%d errors=%v proof_goals=%q", r.CheckedTo, r.Errors, r.ProofGoals)
+
+	want := rocqmcp.FormatProofState(&vsrocq.StringProofState{
+		Goals: []vsrocq.StringGoal{{
+			Hypotheses: []string{"x : nat"},
+			Goal:       "x = x",
+		}},
+	})
+	if r.ProofGoals != want {
+		t.Errorf("proof_goals = %q, want %q", r.ProofGoals, want)
+	}
+}
+
 // TestUpdateFile verifies that a second call reflects file changes.
 func TestUpdateFile(t *testing.T) {
 	bin := vsrocqBin(t)
