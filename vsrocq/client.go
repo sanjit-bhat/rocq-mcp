@@ -55,7 +55,7 @@ func NewClient(binaryPath string, args ...string) *Client {
 }
 
 // Start launches the vsrocqtop process and performs the LSP initialize/initialized handshake.
-func (c *Client) Start(ctx context.Context, rootURI string, opts *InitOptions) (*InitializeResult, error) {
+func (c *Client) Start(ctx context.Context, opts *InitOptions) (*InitializeResult, error) {
 	if opts == nil {
 		opts = DefaultInitOptions()
 	}
@@ -102,8 +102,6 @@ func (c *Client) Start(ctx context.Context, rootURI string, opts *InitOptions) (
 
 	var result InitializeResult
 	if err := c.rpcClient.CallContext(ctx, &result, "initialize", &InitializeParams{
-		ProcessID:             c.cmd.Process.Pid,
-		RootURI:               rootURI,
 		Capabilities:          ClientCapabilities{},
 		InitializationOptions: opts,
 	}); err != nil {

@@ -78,8 +78,6 @@ type ClientCapabilities struct{}
 
 // InitializeParams is the params for the initialize request.
 type InitializeParams struct {
-	ProcessID             int                `json:"processId"`
-	RootURI               string             `json:"rootUri"`
 	Capabilities          ClientCapabilities `json:"capabilities"`
 	InitializationOptions *InitOptions       `json:"initializationOptions,omitempty"`
 }
@@ -148,14 +146,8 @@ type ProofOptions struct {
 
 // GoalsOptions configures goal display.
 type GoalsOptions struct {
-	Diff     DiffOptions     `json:"diff"`
 	Messages MessagesOptions `json:"messages"`
 	PPMode   string          `json:"ppmode,omitempty"` // "Pp" or "String"; "String" returns plaintext via pp_proof/pp_messages
-}
-
-// DiffOptions sets goal diff mode.
-type DiffOptions struct {
-	Mode string `json:"mode"` // "off" | "on" | "removed"
 }
 
 // MessagesOptions controls what appears in proofview messages.
@@ -198,7 +190,6 @@ func DefaultInitOptions() *InitOptions {
 			PointInterpretationMode: PointInterpretationCursor,
 		},
 		Goals: GoalsOptions{
-			Diff:     DiffOptions{Mode: "off"},
 			Messages: MessagesOptions{Full: false},
 			PPMode:   "String",
 		},

@@ -45,7 +45,6 @@ func newClient(t *testing.T, opts *vsrocq.InitOptions) (*vsrocq.Client, string) 
 	bin := vsrocqBin(t)
 
 	dir := t.TempDir()
-	rootURI := "file://" + dir
 
 	c := vsrocq.NewClient(bin)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -56,7 +55,7 @@ func newClient(t *testing.T, opts *vsrocq.InitOptions) (*vsrocq.Client, string) 
 		_ = c.Shutdown(shutCtx)
 	})
 
-	_, err := c.Start(ctx, rootURI, opts)
+	_, err := c.Start(ctx, opts)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -110,13 +109,12 @@ func waitProcessed(t *testing.T, c *vsrocq.Client, timeout time.Duration) {
 
 func TestInitialize(t *testing.T) {
 	bin := vsrocqBin(t)
-	dir := t.TempDir()
 
 	c := vsrocq.NewClient(bin)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	result, err := c.Start(ctx, "file://"+dir, nil)
+	result, err := c.Start(ctx, nil)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -144,7 +142,6 @@ func TestInitializeWithOptions(t *testing.T) {
 			PointInterpretationMode: vsrocq.PointInterpretationCursor,
 		},
 		Goals: vsrocq.GoalsOptions{
-			Diff:     vsrocq.DiffOptions{Mode: "off"},
 			Messages: vsrocq.MessagesOptions{Full: false},
 		},
 		Completion: vsrocq.CompletionOptions{
@@ -164,12 +161,11 @@ func TestInitializeWithOptions(t *testing.T) {
 
 func TestShutdownClean(t *testing.T) {
 	bin := vsrocqBin(t)
-	dir := t.TempDir()
 	c := vsrocq.NewClient(bin)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if _, err := c.Start(ctx, "file://"+dir, nil); err != nil {
+	if _, err := c.Start(ctx, nil); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := c.Shutdown(ctx); err != nil {

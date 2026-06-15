@@ -39,7 +39,6 @@ type fileState struct {
 // Server is the Rocq MCP server state.
 type Server struct {
 	vsrocqBin string
-	rootURI   string
 
 	mu     sync.Mutex
 	client *vsrocq.Client
@@ -48,10 +47,9 @@ type Server struct {
 
 // New creates a Rocq MCP server. Call Start to launch vsrocq eagerly, or let
 // the first tool call launch it lazily via ensureStarted.
-func New(vsrocqBin, rootURI string) *Server {
+func New(vsrocqBin string) *Server {
 	return &Server{
 		vsrocqBin: vsrocqBin,
-		rootURI:   rootURI,
 		files:     make(map[string]*fileState),
 	}
 }
@@ -258,7 +256,7 @@ func (s *Server) startClient(ctx context.Context, proofOpts *vsrocq.ProofOptions
 		opts.Proof = *proofOpts
 	}
 	c := vsrocq.NewClient(s.vsrocqBin)
-	if _, err := c.Start(ctx, s.rootURI, opts); err != nil {
+	if _, err := c.Start(ctx, opts); err != nil {
 		return fmt.Errorf("start vsrocq: %w", err)
 	}
 	s.client = c

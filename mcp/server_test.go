@@ -35,10 +35,10 @@ func vsrocqBin(t *testing.T) string {
 
 // startServer starts a rocqmcp.Server connected via in-memory MCP transport
 // and returns a connected sdk.ClientSession for calling tools.
-func startServer(t *testing.T, bin, rootURI string) (*rocqmcp.Server, *sdk.ClientSession) {
+func startServer(t *testing.T, bin string) (*rocqmcp.Server, *sdk.ClientSession) {
 	t.Helper()
 
-	srv := rocqmcp.New(bin, rootURI)
+	srv := rocqmcp.New(bin)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(func() {
 		cancel()
@@ -111,7 +111,7 @@ func callTool(t *testing.T, cs *sdk.ClientSession, name string, args map[string]
 func TestOmitCheckUpdateClose(t *testing.T) {
 	bin := vsrocqBin(t)
 	dir := t.TempDir()
-	_, cs := startServer(t, bin, "file://"+dir)
+	_, cs := startServer(t, bin)
 
 	// Initial content: lem1 complete, lem2 proof open.
 	initial := `Lemma lem1 : True.
@@ -174,7 +174,7 @@ Qed.
 func TestCheckToEndNoErrors(t *testing.T) {
 	bin := vsrocqBin(t)
 	dir := t.TempDir()
-	_, cs := startServer(t, bin, "file://"+dir)
+	_, cs := startServer(t, bin)
 
 	path := filepath.Join(dir, "ok.v")
 	if err := os.WriteFile(path, []byte("Definition x := 42.\n"), 0644); err != nil {
@@ -191,7 +191,7 @@ func TestCheckToEndNoErrors(t *testing.T) {
 func TestCheckToEndWithError(t *testing.T) {
 	bin := vsrocqBin(t)
 	dir := t.TempDir()
-	_, cs := startServer(t, bin, "file://"+dir)
+	_, cs := startServer(t, bin)
 
 	path := filepath.Join(dir, "bad.v")
 	if err := os.WriteFile(path, []byte("Definition bad := zar.\n"), 0644); err != nil {
@@ -209,7 +209,7 @@ func TestCheckToEndWithError(t *testing.T) {
 func TestCheckToLine(t *testing.T) {
 	bin := vsrocqBin(t)
 	dir := t.TempDir()
-	_, cs := startServer(t, bin, "file://"+dir)
+	_, cs := startServer(t, bin)
 
 	content := "Definition a := 1.\nDefinition bad := zar.\n"
 	path := filepath.Join(dir, "partial.v")
@@ -233,7 +233,7 @@ func TestCheckToLine(t *testing.T) {
 func TestProofGoalsPlaintext(t *testing.T) {
 	bin := vsrocqBin(t)
 	dir := t.TempDir()
-	_, cs := startServer(t, bin, "file://"+dir)
+	_, cs := startServer(t, bin)
 
 	// Open a proof for "1 = 1" but don't close it.
 	content := "Lemma lem : 1 = 1.\nProof.\n"
@@ -257,7 +257,7 @@ func TestProofGoalsPlaintext(t *testing.T) {
 func TestUpdateFile(t *testing.T) {
 	bin := vsrocqBin(t)
 	dir := t.TempDir()
-	_, cs := startServer(t, bin, "file://"+dir)
+	_, cs := startServer(t, bin)
 
 	path := filepath.Join(dir, "update.v")
 	if err := os.WriteFile(path, []byte("Definition bad := zar.\n"), 0644); err != nil {
@@ -296,7 +296,7 @@ func TestUpdateFile(t *testing.T) {
 func TestDelegationSkipOmitsFoo(t *testing.T) {
 	bin := vsrocqBin(t)
 	dir := t.TempDir()
-	_, cs := startServer(t, bin, "file://"+dir)
+	_, cs := startServer(t, bin)
 
 	const content = "" +
 		"Lemma foo (x y : nat) : x + y = y + x.\n" + // 0

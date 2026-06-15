@@ -5,7 +5,7 @@
 //
 // Usage:
 //
-//	mcp-server [--vsrocq-bin PATH] [--workspace URI]
+//	mcp-server [--vsrocq-bin PATH]
 //
 // If --vsrocq-bin is omitted, the binary is discovered from VSROCQ_BIN,
 // `opam exec --switch pav -- which vsrocqtop`, or PATH in that order.
@@ -25,14 +25,12 @@ import (
 
 func main() {
 	vsrocqBin := flag.String("vsrocq-bin", "", "path to vsrocqtop binary (default: auto-discover)")
-	workspace := flag.String("workspace", "", "workspace root URI (default: file:// + CWD)")
 	flag.Parse()
 
 	bin := resolveVsrocqBin(*vsrocqBin)
-	rootURI := resolveRootURI(*workspace)
 
 	ctx := context.Background()
-	srv := rocqmcp.New(bin, rootURI)
+	srv := rocqmcp.New(bin)
 
 	if err := srv.Start(ctx); err != nil {
 		log.Fatalf("launch vsrocq: %v", err)
@@ -63,15 +61,4 @@ func resolveVsrocqBin(flag string) string {
 	}
 	log.Fatal("vsrocqtop not found; set --vsrocq-bin or VSROCQ_BIN env var")
 	return ""
-}
-
-func resolveRootURI(flag string) string {
-	if flag != "" {
-		return flag
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.Fatalf("getwd: %v", err)
-	}
-	return "file://" + cwd
 }
