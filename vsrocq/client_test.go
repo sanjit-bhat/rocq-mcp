@@ -141,34 +141,6 @@ func TestInitialize(t *testing.T) {
 	}
 }
 
-func TestInitializeWithOptions(t *testing.T) {
-	workers := 2
-	opts := &vsrocq.InitOptions{
-		Proof: vsrocq.ProofOptions{
-			Delegation:              "None",
-			Workers:                 &workers,
-			Mode:                    vsrocq.ProofModeContinuous,
-			Block:                   false,
-			PointInterpretationMode: vsrocq.PointInterpretationCursor,
-		},
-		Goals: vsrocq.GoalsOptions{
-			Messages: vsrocq.MessagesOptions{Full: false},
-		},
-		Completion: vsrocq.CompletionOptions{
-			Enable:           false,
-			Algorithm:        0,
-			UnificationLimit: 100,
-			AtomicFactor:     5.0,
-			SizeFactor:       5.0,
-		},
-		Diagnostics: vsrocq.DiagnosticsOptions{Enable: true, Full: false},
-		Memory:      vsrocq.MemoryOptions{Limit: 2},
-		Interrupt:   vsrocq.InterruptOptions{Preempt: false},
-	}
-	c, _ := newClient(t, opts)
-	_ = c // just verify no crash
-}
-
 func TestShutdownClean(t *testing.T) {
 	bin := vsrocqBin(t)
 	c := vsrocq.NewClient(bin)
@@ -293,7 +265,6 @@ func TestInterpretToPoint(t *testing.T) {
 
 func TestStepForwardBackward(t *testing.T) {
 	opts := vsrocq.DefaultInitOptions()
-	opts.Proof.Mode = vsrocq.ProofModeManual
 	c, dir := newClient(t, opts)
 
 	content := "Definition a := 1.\nDefinition b := 2.\n"
@@ -673,7 +644,6 @@ func TestProofViewMessageUnmarshal(t *testing.T) {
 
 func TestManualMode(t *testing.T) {
 	opts := vsrocq.DefaultInitOptions()
-	opts.Proof.Mode = vsrocq.ProofModeManual
 	c, dir := newClient(t, opts)
 
 	content := "Definition a := 1.\nDefinition b := 2.\nDefinition c := 3.\n"
