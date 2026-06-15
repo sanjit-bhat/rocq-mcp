@@ -133,12 +133,12 @@ Proof.
 		"to_line": 4,
 		"omit":    2,
 	})
-	t.Logf("check with omit: checked_to=%d errors=%v goals=%d", r1.CheckedTo, r1.Errors, len(r1.ProofState))
+	t.Logf("check with omit: checked_to=%d errors=%v goals=%q", r1.CheckedTo, r1.Errors, r1.ProofGoals)
 	if len(r1.Errors) != 0 {
 		t.Errorf("expected no errors after omit check, got %v", r1.Errors)
 	}
-	if len(r1.ProofState) == 0 {
-		t.Error("expected proof goals (1 = 1) after stopping inside proof, got none")
+	if r1.ProofGoals == "" {
+		t.Error("expected proof goals (1 = 1) after stopping inside proof, got empty string")
 	}
 
 	// Step 2: update file to complete lem2.
@@ -158,7 +158,7 @@ Qed.
 	r2 := callTool(t, cs, "check_to_end", map[string]any{
 		"path": path,
 	})
-	t.Logf("check_to_end: checked_to=%d errors=%v goals=%d", r2.CheckedTo, r2.Errors, len(r2.ProofState))
+	t.Logf("check_to_end: checked_to=%d errors=%v goals=%q", r2.CheckedTo, r2.Errors, r2.ProofGoals)
 	if len(r2.Errors) != 0 {
 		t.Errorf("expected no errors after completing proofs, got %v", r2.Errors)
 	}
@@ -224,6 +224,31 @@ func TestCheckToLine(t *testing.T) {
 	t.Logf("check line 0: checked_to=%d errors=%v", r.CheckedTo, r.Errors)
 	if len(r.Errors) != 0 {
 		t.Errorf("expected no errors when checking only line 0, got %v", r.Errors)
+	}
+}
+
+// TestProofGoalsPlaintext verifies that an in-progress proof returns non-empty
+// plaintext goals containing the expected goal term.
+func TestProofGoalsPlaintext(t *testing.T) {
+	bin := vsrocqBin(t)
+	dir := t.TempDir()
+	_, cs := startServer(t, bin, "file://"+dir)
+
+	// Open a proof for "1 = 1" but don't close it.
+	content := "Lemma lem : 1 = 1.\nProof.\n"
+	path := filepath.Join(dir, "goals.v")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Check to line 1 (the "Proof." line) — goal should be live.
+	r := callTool(t, cs, "check", map[string]any{
+		"path":    path,
+		"to_line": 1,
+	})
+	want := "1 goal\n\n============================\n1 = 1\n"
+	if r.ProofGoals != want {
+		t.Errorf("proof_goals = %q, want %q", r.ProofGoals, want)
 	}
 }
 

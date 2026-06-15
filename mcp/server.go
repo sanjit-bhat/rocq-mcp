@@ -26,9 +26,9 @@ type CheckError struct {
 
 // CheckResult is returned by the check_to_end and check tools.
 type CheckResult struct {
-	CheckedTo  int           `json:"checked_to"`
-	Errors     []CheckError  `json:"errors"`
-	ProofState []vsrocq.Goal `json:"proof_state"`
+	CheckedTo  int          `json:"checked_to"`
+	Errors     []CheckError `json:"errors"`
+	ProofGoals string       `json:"proof_goals"` // plaintext proof goals (empty when no open proof)
 }
 
 type fileState struct {
@@ -188,8 +188,7 @@ func (s *Server) handleClose(
 		}
 	}
 	return toTextResult(CheckResult{
-		Errors:     []CheckError{},
-		ProofState: []vsrocq.Goal{},
+		Errors: []CheckError{},
 	})
 }
 
@@ -340,7 +339,7 @@ func (s *Server) collectResult(ctx context.Context, uri, content string, toLine 
 // drainUntilStable reads notification channels until no new message arrives
 // within stableTimeout, or BlockOnError fires.
 // alive is false if vsrocq's channels were closed (process exited).
-func (s *Server) drainUntilStable(uri string) (processedTo int, diags []vsrocq.Diagnostic, goals []vsrocq.Goal, alive bool) {
+func (s *Server) drainUntilStable(uri string) (processedTo int, diags []vsrocq.Diagnostic, goals string, alive bool) {
 	c := s.client
 	alive = true
 	timer := time.NewTimer(stableTimeout)
@@ -367,8 +366,8 @@ func (s *Server) drainUntilStable(uri string) (processedTo int, diags []vsrocq.D
 				alive = false
 				return
 			}
-			if pv.Proof != nil {
-				goals = pv.Proof.Goals
+			if pv.PPProof != nil {
+				goals = formatProofState(pv.PPProof)
 			}
 			resetTimer(timer, stableTimeout)
 
@@ -413,7 +412,7 @@ func (s *Server) drainUntilStable(uri string) (processedTo int, diags []vsrocq.D
 }
 
 // drainBuffered does a non-blocking sweep of all notification channels.
-func (s *Server) drainBuffered(uri string, processedTo *int, diags *[]vsrocq.Diagnostic, goals *[]vsrocq.Goal) {
+func (s *Server) drainBuffered(uri string, processedTo *int, diags *[]vsrocq.Diagnostic, goals *string) {
 	c := s.client
 	for {
 		select {
@@ -432,8 +431,8 @@ func (s *Server) drainBuffered(uri string, processedTo *int, diags *[]vsrocq.Dia
 			if !ok {
 				return
 			}
-			if pv.Proof != nil {
-				*goals = pv.Proof.Goals
+			if pv.PPProof != nil {
+				*goals = formatProofState(pv.PPProof)
 			}
 		case d, ok := <-c.Diagnostics:
 			if !ok {
@@ -476,10 +475,39 @@ func resetTimer(t *time.Timer, d time.Duration) {
 
 // ---- result construction ----------------------------------------------------
 
+// formatProofState renders a StringProofState as a human-readable plaintext
+// string in the classic Rocq proof-view style.
+func formatProofState(ps *vsrocq.StringProofState) string {
+	if ps == nil || len(ps.Goals) == 0 {
+		return ""
+	}
+	var b []byte
+	n := len(ps.Goals)
+	if n == 1 {
+		b = append(b, "1 goal\n"...)
+	} else {
+		b = append(b, fmt.Sprintf("%d goals\n", n)...)
+	}
+	for i, g := range ps.Goals {
+		if i > 0 {
+			b = append(b, '\n')
+		}
+		b = append(b, '\n')
+		for _, h := range g.Hypotheses {
+			b = append(b, h...)
+			b = append(b, '\n')
+		}
+		b = append(b, "============================\n"...)
+		b = append(b, g.Goal...)
+		b = append(b, '\n')
+	}
+	return string(b)
+}
+
 // buildCheckResult assembles a CheckResult from the stable-state outputs.
 // toLine is the scope boundary: errors on lines > toLine are omitted,
 // and CheckedTo is capped at toLine (math.MaxInt = no cap).
-func buildCheckResult(processedTo int, toLine int, diags []vsrocq.Diagnostic, goals []vsrocq.Goal) CheckResult {
+func buildCheckResult(processedTo int, toLine int, diags []vsrocq.Diagnostic, goals string) CheckResult {
 	var errors []CheckError
 	for _, d := range diags {
 		if d.Severity == 1 && d.Range.Start.Line <= toLine {
@@ -498,13 +526,10 @@ func buildCheckResult(processedTo int, toLine int, diags []vsrocq.Diagnostic, go
 	if errors == nil {
 		errors = []CheckError{}
 	}
-	if goals == nil {
-		goals = []vsrocq.Goal{}
-	}
 	return CheckResult{
 		CheckedTo:  checkedTo,
 		Errors:     errors,
-		ProofState: goals,
+		ProofGoals: goals,
 	}
 }
 

@@ -144,6 +144,7 @@ type ProofOptions struct {
 type GoalsOptions struct {
 	Diff     DiffOptions     `json:"diff"`
 	Messages MessagesOptions `json:"messages"`
+	PPMode   string          `json:"ppmode,omitempty"` // "Pp" or "String"; "String" returns plaintext via pp_proof/pp_messages
 }
 
 // DiffOptions sets goal diff mode.
@@ -193,6 +194,7 @@ func DefaultInitOptions() *InitOptions {
 		Goals: GoalsOptions{
 			Diff:     DiffOptions{Mode: "off"},
 			Messages: MessagesOptions{Full: false},
+			PPMode:   "String",
 		},
 		Completion: CompletionOptions{
 			Enable:           false,
@@ -251,6 +253,23 @@ type ProofState struct {
 	UnfocusedGoals []Goal `json:"unfocusedGoals"`
 }
 
+// StringGoal is a single proof goal in String ppmode — all text fields are
+// plain strings rather than Ppcmd trees.
+type StringGoal struct {
+	ID         int      `json:"id"`
+	Name       *string  `json:"name"`
+	Hypotheses []string `json:"hypotheses"`
+	Goal       string   `json:"goal"`
+}
+
+// StringProofState is the pp_proof payload when ppmode is "String".
+type StringProofState struct {
+	Goals          []StringGoal `json:"goals"`
+	ShelvedGoals   []StringGoal `json:"shelvedGoals"`
+	GivenUpGoals   []StringGoal `json:"givenUpGoals"`
+	UnfocusedGoals []StringGoal `json:"unfocusedGoals"`
+}
+
 // ProofViewMessage is a (severity, pp) pair in a ProofView notification.
 // On the wire it serialises as a 2-element JSON array.
 type ProofViewMessage struct {
@@ -281,7 +300,7 @@ type ProofViewParams struct {
 	Range      Range              `json:"range"`
 	Proof      *ProofState        `json:"proof"`
 	Messages   []ProofViewMessage `json:"messages"`
-	PPProof    json.RawMessage    `json:"pp_proof,omitempty"`
+	PPProof    *StringProofState  `json:"pp_proof,omitempty"`
 	PPMessages []json.RawMessage  `json:"pp_messages,omitempty"`
 }
 
