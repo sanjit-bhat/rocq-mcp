@@ -43,6 +43,7 @@ type Server struct {
 	mu     sync.Mutex
 	client *vsrocq.Client
 	files  map[string]*fileState
+	omit   bool // true when client is initialized with DelegationSkip
 }
 
 // New creates a Rocq MCP server. Call Start to launch vsrocq eagerly, or let
@@ -81,7 +82,7 @@ func (s *Server) MCPServer() *sdk.Server {
 			sdk.Input(
 				sdk.Property("path", sdk.Description("path to the .v file")),
 				sdk.Property("to_line", sdk.Description("check up to this 0-based line (inclusive)")),
-				sdk.Property("omit", sdk.Description("if set, skip proof bodies before this 0-based line using delegation")),
+				sdk.Property("omit", sdk.Description("if true, skip proof bodies (DelegationSkip); proofs are admitted and Qed failures appear as diagnostics")),
 			),
 		),
 		sdk.NewServerTool("close_file", "Free vsrocq incremental-checking cache for a file", s.handleClose,
@@ -102,7 +103,7 @@ type checkToEndArgs struct {
 type checkArgs struct {
 	Path   string `json:"path"`
 	ToLine int    `json:"to_line"`
-	Omit   *int   `json:"omit,omitempty"`
+	Omit   bool   `json:"omit"`
 }
 
 type closeArgs struct {
@@ -122,15 +123,10 @@ func (s *Server) handleCheckToEnd(
 	if err := s.ensureStarted(ctx); err != nil {
 		return nil, err
 	}
-	uri, content, version, err := s.openOrUpdate(ctx, params.Arguments.Path)
-	if err != nil {
+	if err := s.setOmit(ctx, false); err != nil {
 		return nil, err
 	}
-	if err := s.client.InterpretToEnd(uri, version); err != nil {
-		return nil, fmt.Errorf("InterpretToEnd: %w", err)
-	}
-	result := s.collectResult(ctx, uri, content, math.MaxInt)
-	return toTextResult(result)
+	return s.doInterpret(ctx, params.Arguments.Path, true, 0 /* unused */)
 }
 
 func (s *Server) handleCheck(
@@ -142,22 +138,14 @@ func (s *Server) handleCheck(
 	defer s.mu.Unlock()
 
 	a := params.Arguments
-	if a.Omit != nil {
-		return s.checkWithOmit(ctx, a.Path, a.ToLine, *a.Omit)
-	}
-
+	omit := a.Omit
 	if err := s.ensureStarted(ctx); err != nil {
 		return nil, err
 	}
-	uri, content, version, err := s.openOrUpdate(ctx, a.Path)
-	if err != nil {
+	if err := s.setOmit(ctx, omit); err != nil {
 		return nil, err
 	}
-	if err := s.client.InterpretToPoint(uri, version, vsrocq.Position{Line: a.ToLine, Character: 0}); err != nil {
-		return nil, fmt.Errorf("InterpretToPoint: %w", err)
-	}
-	result := s.collectResult(ctx, uri, content, a.ToLine)
-	return toTextResult(result)
+	return s.doInterpret(ctx, a.Path, false, a.ToLine)
 }
 
 func (s *Server) handleClose(
@@ -190,55 +178,47 @@ func (s *Server) handleClose(
 	})
 }
 
-// ---- omit (two-phase) -------------------------------------------------------
+// ---- omit management --------------------------------------------------------
 
-func (s *Server) checkWithOmit(ctx context.Context, path string, toLine, omit int) (*sdk.CallToolResultFor[struct{}], error) {
-	absPath, err := filepath.Abs(path)
+// setOmit switches the delegation strategy. If omit is true the client is
+// reconfigured with DelegationSkip; false restores DelegationNone.
+// vsrocqserv accepts Initialize multiple times — it only updates config vars,
+// document state is preserved.
+func (s *Server) setOmit(ctx context.Context, omit bool) error {
+	if s.omit == omit {
+		return nil
+	}
+	opts := vsrocq.DefaultInitOptions()
+	if omit {
+		opts.Proof.Delegation = vsrocq.DelegationSkip
+	}
+	if _, err := s.client.Initialize(ctx, opts); err != nil {
+		return fmt.Errorf("reinitialize: %w", err)
+	}
+	s.omit = omit
+	return nil
+}
+
+// doInterpret opens/updates the file, dispatches the interpret command, and
+// collects results. If toLine is true, InterpretToEnd is used; otherwise
+// InterpretToPoint to line.
+func (s *Server) doInterpret(ctx context.Context, path string, toLine bool, line int) (*sdk.CallToolResultFor[struct{}], error) {
+	uri, content, version, err := s.openOrUpdate(ctx, path)
 	if err != nil {
 		return nil, err
 	}
-	uri := "file://" + absPath
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+	capLine := line
+	if toLine {
+		if err := s.client.InterpretToEnd(uri, version); err != nil {
+			return nil, fmt.Errorf("InterpretToEnd: %w", err)
+		}
+		capLine = math.MaxInt
+	} else {
+		if err := s.client.InterpretToPoint(uri, version, vsrocq.Position{Line: line, Character: 0}); err != nil {
+			return nil, fmt.Errorf("InterpretToPoint: %w", err)
+		}
 	}
-	content := string(data)
-
-	// Phase 1: DelegationSkip up to omit (fast build of context before target).
-	if err := s.reinit(ctx, vsrocq.ProofOptions{
-		Delegation:              vsrocq.DelegationSkip,
-		Mode:                    vsrocq.ProofModeContinuous,
-		PointInterpretationMode: vsrocq.PointInterpretationCursor,
-	}); err != nil {
-		return nil, fmt.Errorf("phase1 reinit: %w", err)
-	}
-	if err := s.client.DidOpen(uri, "rocq", content, 1); err != nil {
-		return nil, fmt.Errorf("phase1 DidOpen: %w", err)
-	}
-	s.files[uri] = &fileState{version: 1, content: content}
-	if err := s.client.InterpretToPoint(uri, 1, vsrocq.Position{Line: omit, Character: 0}); err != nil {
-		return nil, fmt.Errorf("phase1 InterpretToPoint: %w", err)
-	}
-	s.drainUntilStable(uri) // discard phase-1 result
-
-	// Phase 2: DelegationNone to toLine (verify target proofs).
-	if err := s.reinit(ctx, vsrocq.ProofOptions{
-		Delegation:              vsrocq.DelegationNone,
-		Mode:                    vsrocq.ProofModeContinuous,
-		PointInterpretationMode: vsrocq.PointInterpretationCursor,
-	}); err != nil {
-		return nil, fmt.Errorf("phase2 reinit: %w", err)
-	}
-	if err := s.client.DidOpen(uri, "rocq", content, 1); err != nil {
-		return nil, fmt.Errorf("phase2 DidOpen: %w", err)
-	}
-	s.files[uri] = &fileState{version: 1, content: content}
-	if err := s.client.InterpretToPoint(uri, 1, vsrocq.Position{Line: toLine, Character: 0}); err != nil {
-		return nil, fmt.Errorf("phase2 InterpretToPoint: %w", err)
-	}
-	result := s.collectResult(ctx, uri, content, toLine)
-	return toTextResult(result)
+	return toTextResult(s.collectResult(ctx, uri, content, capLine))
 }
 
 // ---- vsrocq lifecycle -------------------------------------------------------
@@ -247,25 +227,20 @@ func (s *Server) ensureStarted(ctx context.Context) error {
 	if s.client != nil {
 		return nil
 	}
-	return s.startClient(ctx, nil)
+	return s.startClient(ctx)
 }
 
-func (s *Server) startClient(ctx context.Context, proofOpts *vsrocq.ProofOptions) error {
-	opts := vsrocq.DefaultInitOptions()
-	if proofOpts != nil {
-		opts.Proof = *proofOpts
-	}
+func (s *Server) startClient(ctx context.Context) error {
 	c := vsrocq.NewClient(s.vsrocqBin)
-	if _, err := c.Start(ctx, opts); err != nil {
+	if err := c.Start(ctx); err != nil {
 		return fmt.Errorf("start vsrocq: %w", err)
 	}
+	if _, err := c.Initialize(ctx, nil); err != nil {
+		return fmt.Errorf("initialize vsrocq: %w", err)
+	}
 	s.client = c
+	s.omit = false
 	return nil
-}
-
-func (s *Server) reinit(ctx context.Context, proofOpts vsrocq.ProofOptions) error {
-	_ = s.stopClient(ctx)
-	return s.startClient(ctx, &proofOpts)
 }
 
 func (s *Server) stopClient(ctx context.Context) error {
@@ -335,8 +310,7 @@ func (s *Server) collectResult(ctx context.Context, uri, content string, toLine 
 }
 
 // drainUntilStable reads notification channels until no new message arrives
-// within stableTimeout, or BlockOnError fires.
-// alive is false if vsrocq's channels were closed (process exited).
+// within stableTimeout. alive is false if vsrocq's channels were closed.
 func (s *Server) drainUntilStable(uri string) (processedTo int, diags []vsrocq.Diagnostic, goals string, alive bool) {
 	c := s.client
 	alive = true
@@ -384,9 +358,7 @@ func (s *Server) drainUntilStable(uri string) (processedTo int, diags []vsrocq.D
 				alive = false
 				return
 			}
-			// Sweep any messages already buffered before returning.
-			s.drainBuffered(uri, &processedTo, &diags, &goals)
-			return
+			resetTimer(timer, stableTimeout)
 
 		case _, ok := <-c.MoveCursor:
 			if !ok {

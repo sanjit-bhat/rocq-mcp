@@ -104,7 +104,7 @@ func callTool(t *testing.T, cs *sdk.ClientSession, name string, args map[string]
 }
 
 // TestOmitCheckUpdateClose is the end-to-end scenario:
-//  1. check with omit (two-phase) → should surface proof goals
+//  1. check with omit=true (DelegationSkip) → should surface proof goals
 //  2. update the file (complete the proof)
 //  3. check_to_end → should have no errors, no goals
 //  4. close_file
@@ -125,19 +125,16 @@ Proof.
 		t.Fatalf("write: %v", err)
 	}
 
-	// Step 1: check with omit=2 (skip lem1 proof body), to_line=4 (stop at Proof.)
-	// Phase 1 builds up to line 2 with delegation:Skip.
-	// Phase 2 checks lines 3-4 (lem2 statement + Proof.) with delegation:None.
-	// We expect at least one goal (1 = 1) in ProofState.
+	// Step 1: check with omit=true (DelegationSkip) to line 4 (lem2 Proof.).
+	// Proof bodies are admitted; Qed failures are expected as diagnostics.
+	// We expect proof goals (1 = 1) for the open lem2 proof.
 	r1 := callTool(t, cs, "check", map[string]any{
 		"path":    path,
 		"to_line": 4,
-		"omit":    2,
+		"omit":    true,
 	})
 	t.Logf("check with omit: checked_to=%d errors=%v goals=%q", r1.CheckedTo, r1.Errors, r1.ProofGoals)
-	if len(r1.Errors) != 0 {
-		t.Errorf("expected no errors after omit check, got %v", r1.Errors)
-	}
+	// Admission errors from DelegationSkip are expected; only assert on goals.
 	if r1.ProofGoals == "" {
 		t.Error("expected proof goals (1 = 1) after stopping inside proof, got empty string")
 	}
@@ -278,21 +275,20 @@ func TestUpdateFile(t *testing.T) {
 	}
 }
 
-// TestDelegationSkipOmitsFoo verifies that check with omit skips foo's proof
-// body (Phase 1 DelegationSkip) and returns bar's proof state.
+// TestDelegationSkipOmitsFoo verifies that check with omit=true uses DelegationSkip,
+// admitting foo's proof, and returns bar's proof state.
 //
 // File layout (0-indexed lines):
 //
 //	0: Lemma foo (x y : nat) : x + y = y + x.
 //	1: Proof.
-//	2:   reflexivity.            ← would fail if executed in Phase 2
+//	2:   reflexivity.            ← invalid tactic; would fail with DelegationNone
 //	3: Qed.
 //	4: Lemma bar (x : nat) : x = x.
 //	5: Proof.                   ← cursor; bar's goal (x = x) is live here
 //
-// With omit=2 Phase 1 uses DelegationSkip up to line 2: foo's proof sentences
-// are dropped, only Qed runs (fails, foo auto-admitted).  Phase 2 (DelegationNone)
-// verifies bar's proof state starting from the cursor at line 5.
+// With omit=true (DelegationSkip) foo's proof sentences are dropped; only Qed
+// runs (fails, foo auto-admitted).  bar's proof state at line 5 is then live.
 func TestDelegationSkipOmitsFoo(t *testing.T) {
 	bin := vsrocqBin(t)
 	dir := t.TempDir()
@@ -314,7 +310,7 @@ func TestDelegationSkipOmitsFoo(t *testing.T) {
 	r := callTool(t, cs, "check", map[string]any{
 		"path":    path,
 		"to_line": 5,
-		"omit":    2,
+		"omit":    true,
 	})
 	t.Logf("check: checked_to=%d errors=%v goals=%q", r.CheckedTo, r.Errors, r.ProofGoals)
 
@@ -327,9 +323,22 @@ func TestDelegationSkipOmitsFoo(t *testing.T) {
 	if r.ProofGoals != wantGoals {
 		t.Errorf("proof_goals = %q, want %q", r.ProofGoals, wantGoals)
 	}
+
+	// DelegationSkip admits foo: the error must land on Qed (line 3), not on
+	// the skipped reflexivity tactic (line 2), and bar must be error-free.
+	fooErr := false
 	for _, e := range r.Errors {
 		if e.Line >= 4 {
 			t.Errorf("unexpected error on bar: line %d: %s", e.Line, e.Message)
 		}
+		if e.Line == 3 {
+			fooErr = true
+		}
+		if e.Line == 2 {
+			t.Errorf("error on skipped tactic line 2 (should be on Qed): %s", e.Message)
+		}
+	}
+	if !fooErr {
+		t.Error("expected admission error on foo's Qed (line 3), got none")
 	}
 }
